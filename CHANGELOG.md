@@ -2,6 +2,32 @@
 
 Alle Änderungen am Outfit-Dashboard-MK1. Versionierung nach Semantic Versioning.
 
+## [1.3.0] – 2026-10-03
+
+### Neu
+- Windows-EXE und macOS-App per PyInstaller (`packaging/outfit_dashboard.spec`)
+- GitHub-Actions-Workflow `.github/workflows/build-release.yml`:
+  baut Windows-EXE, macOS-App und Router-Paket, startet jedes Programm
+  probeweise und erstellt automatisch ein Release, sobald die Version in
+  `version.py` neu ist (Release-Text aus `CHANGELOG.md`)
+- Icon wird beim Build per `packaging/make_icon.py` erzeugt (keine Binärdateien im Repo)
+- Desktop-Start: Browser öffnet sich automatisch, Netzwerkadresse fürs iPhone
+  wird angezeigt
+- Läuft das Dashboard schon, öffnet ein zweiter Start nur den Browser;
+  belegter Port → automatisch nächster freier Port (bis +10)
+- Einstellungen: „Programm beenden“ für die Desktop-Version (nur vom eigenen Rechner)
+- Protokolldatei `daten/outfit.log`
+
+### Geändert
+- Vorlagen/statische Dateien werden aus dem Programm-Bundle geladen
+- Datenordner der Desktop-Versionen: Windows `daten\` neben der EXE
+  (Rückfall `%LOCALAPPDATA%`), macOS `~/Library/Application Support/Outfit-Dashboard/daten`
+- Wetterabruf nutzt das CA-Bündel von `certifi` (neue Abhängigkeit),
+  behebt Zertifikatsfehler der Mac-App
+- `install.sh` installiert auf dem Router zusätzlich `certifi`
+- Neue Konfigurationsoption `open_browser`, Umgebungsvariablen `OUTFIT_PORT`
+  und `OUTFIT_OPEN_BROWSER`
+
 ## [1.2.0] – 2026-10-03
 
 ### Geändert

@@ -360,6 +360,16 @@ $("#restoreInput").addEventListener("change", async e => {
   } catch (err) { toast(err.message, true); }
 });
 
+$("#btnShutdown").addEventListener("click", async () => {
+  if (!confirm("Outfit-Dashboard wirklich beenden?")) return;
+  try {
+    await api("/api/shutdown", { method: "POST" });
+    document.body.innerHTML = `<main class="container"><section class="card" style="margin-top:40px">
+      <h3>Outfit-Dashboard wurde beendet.</h3>
+      <p class="hint">Dieses Fenster kann geschlossen werden.</p></section></main>`;
+  } catch (e) { toast(e.message, true); }
+});
+
 /* ================= Start ================= */
 (async function init() {
   try {
@@ -367,6 +377,7 @@ $("#restoreInput").addEventListener("change", async e => {
   } catch (e) { toast("Server nicht erreichbar: " + e.message, true); return; }
   S.activities = S.meta.activities.map(a => ({ ...a }));
   $("#itemType").innerHTML = S.meta.types.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("");
+  $("#shutdownBox").classList.toggle("hidden", !S.meta.can_shutdown);
   renderLocation();
   renderActivities();
   setupSliders();

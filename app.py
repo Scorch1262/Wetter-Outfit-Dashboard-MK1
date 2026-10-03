@@ -3,7 +3,8 @@
 
 Lokales Web-Dashboard, das aus dem eigenen Kleiderschrank passend zum
 Tageswetter und zur gewählten Aktivität ein farblich stimmiges Outfit
-zusammenstellt. Läuft auf PC, Raspberry Pi und GL.iNet-Routern (OpenWrt).
+zusammenstellt. Läuft auf PC, Raspberry Pi und GL.iNet-Routern (OpenWrt)
+sowie als eigenständige Windows-EXE bzw. macOS-App (PyInstaller).
 
 Start:  python3 app.py
 """
@@ -15,10 +16,14 @@ import os
 import random
 import re
 import shutil
+import socket
 import sys
 import tempfile
+import threading
 import time
+import urllib.request
 import uuid
+import webbrowser
 import zipfile
 
 from flask import Flask, abort, jsonify, render_template, request, send_file, send_from_directory
@@ -28,7 +33,12 @@ import weather as wx
 from storage import JsonStore
 from version import APP_NAME, __version__
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Als EXE/App (PyInstaller) liegen Vorlagen und statische Dateien im
+# entpackten Bundle (sys._MEIPASS), die Nutzerdaten dagegen außerhalb.
+FROZEN = bool(getattr(sys, "frozen", False))
+BASE_DIR = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
+RESOURCE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+IS_MAC_APP = FROZEN and sys.platform == "darwin"
 
 DEFAULT_CONFIG = {
     "host": "0.0.0.0",
@@ -53,8 +63,11 @@ DEFAULT_SETTINGS = {
 }
 DEFAULT_CLOTHES = {"schema": 1, "items": []}
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
-                    stream=sys.stdout)
+LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
+_log_handlers = []
+if sys.stdout is not None:  # macOS-App ohne Terminal hat kein stdout
+    _log_handlers.append(logging.StreamHandler(sys.stdout))
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, handlers=_log_handlers or None)
 log = logging.getLogger("outfit")
 
 
@@ -78,14 +91,44 @@ DATA_FOLDER_NAME = "daten"
 LEGACY_HOMES = ["/srv/outfit-dashboard", os.path.join(os.path.expanduser("~"), ".outfit-dashboard")]
 
 
-def resolve_home():
-    home = os.path.abspath(os.environ.get("OUTFIT_HOME") or os.path.join(BASE_DIR, DATA_FOLDER_NAME))
+def _writable(folder):
     try:
-        os.makedirs(home, exist_ok=True)
-    except OSError as exc:
-        log.error("Datenordner %s nicht anlegbar: %s", home, exc)
-        sys.exit(1)
-    return home
+        os.makedirs(folder, exist_ok=True)
+        probe = os.path.join(folder, ".schreibtest")
+        with open(probe, "w") as fh:
+            fh.write("ok")
+        os.remove(probe)
+        return True
+    except OSError:
+        return False
+
+
+def resolve_home():
+    """Datenordner wählen.
+
+    Python/Router:  <Programmordner>/daten
+    Windows-EXE:    daten/ neben der EXE (sonst %LOCALAPPDATA%\\Outfit-Dashboard\\daten)
+    macOS-App:      ~/Library/Application Support/Outfit-Dashboard/daten
+                    (das App-Bundle selbst ist nicht beschreibbar)
+    """
+    env = os.environ.get("OUTFIT_HOME")
+    if env:
+        candidates = [env]
+    elif IS_MAC_APP:
+        candidates = [os.path.expanduser("~/Library/Application Support/Outfit-Dashboard/" + DATA_FOLDER_NAME)]
+    elif FROZEN:
+        local = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        candidates = [os.path.join(BASE_DIR, DATA_FOLDER_NAME),
+                      os.path.join(local, "Outfit-Dashboard", DATA_FOLDER_NAME)]
+    else:
+        candidates = [os.path.join(BASE_DIR, DATA_FOLDER_NAME)]
+    for home in candidates:
+        home = os.path.abspath(home)
+        if _writable(home):
+            return home
+        log.warning("Datenordner %s nicht beschreibbar", home)
+    log.error("Kein beschreibbarer Datenordner gefunden.")
+    sys.exit(1)
 
 
 HOME_DIR = resolve_home()
@@ -105,7 +148,8 @@ def _legacy_sources():
         if os.path.realpath(home) != os.path.realpath(HOME_DIR):
             sources.append((os.path.join(home, "config.json"), home, "data"))
     # v1.0.0: config.json und data/ direkt im Programmordner
-    sources.append((os.path.join(BASE_DIR, "config.json"), BASE_DIR, "data"))
+    if not FROZEN:
+        sources.append((os.path.join(BASE_DIR, "config.json"), BASE_DIR, "data"))
     return sources
 
 
@@ -195,7 +239,17 @@ def load_items():
     return [normalize_item(i) for i in clothes_store.load()["items"] if isinstance(i, dict) and i.get("id")]
 
 
-app = Flask(__name__)
+# Protokoll zusätzlich in daten/outfit.log (wichtig für die macOS-App ohne Terminal)
+try:
+    _fh = logging.FileHandler(os.path.join(HOME_DIR, "outfit.log"), encoding="utf-8")
+    _fh.setFormatter(logging.Formatter(LOG_FORMAT))
+    logging.getLogger().addHandler(_fh)
+except OSError:
+    pass
+
+app = Flask(__name__,
+            template_folder=os.path.join(RESOURCE_DIR, "templates"),
+            static_folder=os.path.join(RESOURCE_DIR, "static"))
 app.config["MAX_CONTENT_LENGTH"] = max(int(CONFIG["max_upload_mb"]), int(CONFIG["max_backup_mb"])) * 1024 * 1024
 app.config["JSON_AS_ASCII"] = False
 app.json.ensure_ascii = False
@@ -340,11 +394,17 @@ def serve_image(filename):
 # API
 # ---------------------------------------------------------------------------
 
+def _is_local_request():
+    return request.remote_addr in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
+
 @app.get("/api/meta")
 def api_meta():
     s = settings_store.load()
     return jsonify({
+        "app": APP_NAME,
         "version": __version__,
+        "can_shutdown": FROZEN and _is_local_request(),
         "types": ofit.TYPES,
         "colors": ofit.COLORS,
         "temp_scale": ofit.TEMP_SCALE,
@@ -626,6 +686,16 @@ def _restore_from(path):
     return jsonify({"ok": True, "items": len(clothes["items"]), "images": len(images)})
 
 
+@app.post("/api/shutdown")
+def api_shutdown():
+    """Beendet die Desktop-Version (EXE/App) – nur vom eigenen Rechner aus."""
+    if not FROZEN or not _is_local_request():
+        return jsonify({"ok": False, "errors": ["Nur in der Desktop-Version vom eigenen Rechner möglich."]}), 403
+    log.info("Beenden über die Weboberfläche angefordert")
+    threading.Timer(0.6, lambda: os._exit(0)).start()
+    return jsonify({"ok": True})
+
+
 @app.errorhandler(413)
 def too_large(_err):
     return jsonify({"ok": False, "errors": [f"Datei zu groß (max. {CONFIG['max_backup_mb']} MB)."]}), 413
@@ -635,15 +705,77 @@ def too_large(_err):
 # Start
 # ---------------------------------------------------------------------------
 
+def _env_flag(name):
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    return value.strip().lower() in ("1", "true", "ja", "yes", "on")
+
+
+def _port_free(host, port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        if sys.platform != "win32":
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+            return True
+        except OSError:
+            return False
+
+
+def _already_running(port):
+    """Läuft auf dem Port schon ein Outfit-Dashboard?"""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/meta", timeout=1.5) as resp:
+            return json.loads(resp.read().decode("utf-8")).get("app") == APP_NAME
+    except Exception:
+        return False
+
+
+def _lan_ip():
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("192.0.2.1", 80))  # kein echter Verkehr, nur Routenwahl
+            return sock.getsockname()[0]
+    except OSError:
+        return None
+
+
 def main():
-    host, port = CONFIG["host"], int(CONFIG["port"])
-    log.info("%s v%s startet auf http://%s:%s", APP_NAME, __version__, host, port)
+    host = CONFIG["host"]
+    port = int(os.environ.get("OUTFIT_PORT") or CONFIG["port"])
+    open_browser = _env_flag("OUTFIT_OPEN_BROWSER")
+    if open_browser is None:
+        open_browser = bool(CONFIG.get("open_browser", FROZEN))
+
+    if not _port_free(host, port):
+        if _already_running(port):
+            log.info("Outfit-Dashboard läuft bereits auf Port %s – öffne nur den Browser.", port)
+            if open_browser:
+                webbrowser.open(f"http://127.0.0.1:{port}/")
+            return
+        for alt in range(port + 1, port + 11):
+            if _port_free(host, alt):
+                log.warning("Port %s ist belegt – weiche auf Port %s aus.", port, alt)
+                port = alt
+                break
+        else:
+            log.error("Port %s und die 10 folgenden Ports sind belegt.", port)
+            sys.exit(1)
+
+    log.info("%s v%s", APP_NAME, __version__)
     log.info("Programm: %s", BASE_DIR)
     log.info("Daten:    %s (Konfiguration: %s)", DATA_DIR, CONFIG_PATH)
+    log.info("Lokal:    http://127.0.0.1:%s", port)
+    ip = _lan_ip()
+    if ip and host in ("0.0.0.0", "::"):
+        log.info("Netzwerk: http://%s:%s  (z. B. für das iPhone)", ip, port)
+    if open_browser:
+        threading.Timer(1.2, webbrowser.open, [f"http://127.0.0.1:{port}/"]).start()
     try:
         app.run(host=host, port=port, threaded=True, debug=False, use_reloader=False)
     except OSError as exc:
-        log.error("Webserver konnte nicht starten (Port %s belegt?): %s", port, exc)
+        log.error("Webserver konnte nicht starten (Port %s): %s", port, exc)
         sys.exit(1)
 
 

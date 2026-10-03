@@ -59,7 +59,13 @@ _fetch_lock = threading.Lock()
 
 def _ssl_context(verify=True):
     if verify:
-        return ssl.create_default_context()
+        # In der macOS-App/Windows-EXE fehlen oft System-Zertifikate für Python –
+        # certifi bringt ein eigenes CA-Bündel mit (auf dem Router optional).
+        try:
+            import certifi
+            return ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            return ssl.create_default_context()
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE

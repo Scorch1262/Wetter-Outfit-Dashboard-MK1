@@ -1,0 +1,218 @@
+# Baut bei jedem Push die Windows-EXE, die macOS-App und das Router-Paket
+# und erzeugt automatisch ein GitHub-Release, sobald die Versionsnummer in
+# version.py neu ist (Tag v<Version> existiert noch nicht).
+#
+# Ablauf:  version.py hochzählen  ->  CHANGELOG.md ergänzen  ->  pushen
+#          => Release "Outfit-Dashboard v<Version>" mit allen Dateien
+
+name: Build & Release
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: Version lesen
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          VERSION=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' version.py)
+          if [ -z "$VERSION" ]; then echo "::error::Keine Version in version.py gefunden"; exit 1; fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows
+            asset: windows
+          - os: macos-latest
+            label: macOS
+            asset: macos
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller pillow
+
+      - name: Icon erzeugen
+        run: python packaging/make_icon.py
+
+      - name: PyInstaller
+        run: pyinstaller --noconfirm --clean packaging/outfit_dashboard.spec
+
+      - name: Programm starten und testen (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          export OUTFIT_HOME="$RUNNER_TEMP/daten" OUTFIT_OPEN_BROWSER=0 OUTFIT_PORT=8095
+          ./dist/Outfit-Dashboard.exe > start.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8095/api/meta > meta.json 2>/dev/null; then break; fi
+            sleep 1
+          done
+          taskkill //F //IM Outfit-Dashboard.exe > /dev/null 2>&1 || true
+          cat start.log || true
+          grep -q "\"version\":\"$VERSION\"" meta.json || grep -q "\"version\": \"$VERSION\"" meta.json
+          echo "Start-Test erfolgreich"
+
+      - name: Programm starten und testen (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          export OUTFIT_HOME="$RUNNER_TEMP/daten" OUTFIT_OPEN_BROWSER=0 OUTFIT_PORT=8095
+          ./dist/Outfit-Dashboard.app/Contents/MacOS/Outfit-Dashboard > start.log 2>&1 &
+          PID=$!
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8095/api/meta > meta.json 2>/dev/null; then break; fi
+            sleep 1
+          done
+          kill $PID || true
+          cat "$OUTFIT_HOME/outfit.log" || true
+          grep -q "\"version\":\"$VERSION\"" meta.json || grep -q "\"version\": \"$VERSION\"" meta.json
+          echo "Start-Test erfolgreich"
+
+      - name: Paket schnüren (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -p out
+          cp dist/Outfit-Dashboard.exe "out/Outfit-Dashboard-v${VERSION}-windows.exe"
+
+      - name: Paket schnüren (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p out
+          # ditto erhält Bundle-Struktur, Symlinks und Rechte der .app
+          ditto -c -k --sequesterRsrc --keepParent dist/Outfit-Dashboard.app \
+            "out/Outfit-Dashboard-v${VERSION}-macos.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Outfit-Dashboard-v${{ env.VERSION }}-${{ matrix.asset }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30
+
+  router:
+    name: Router-Paket (GL.iNet)
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax prüfen
+        run: |
+          python3 -m py_compile app.py outfit.py weather.py storage.py version.py
+          sh -n openwrt/install.sh
+          sh -n openwrt/update.sh
+
+      - name: Ordner Outfit-Dashboard packen
+        run: |
+          mkdir -p pkg/Outfit-Dashboard out
+          cp -a app.py outfit.py weather.py storage.py version.py requirements.txt \
+                config.example.json README.md CHANGELOG.md .gitignore \
+                templates static openwrt pkg/Outfit-Dashboard/
+          chmod +x pkg/Outfit-Dashboard/openwrt/*
+          (cd pkg && zip -qr "../out/Outfit-Dashboard-v${VERSION}-router.zip" Outfit-Dashboard)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Outfit-Dashboard-v${{ env.VERSION }}-router
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Release erstellen
+    needs: [version, build, router]
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gibt es das Release schon?
+        id: check
+        run: |
+          if gh release view "v${VERSION}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release v${VERSION} existiert bereits – für ein neues Release version.py hochzählen."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/download-artifact@v4
+        if: steps.check.outputs.exists == 'false'
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Release-Text aus CHANGELOG.md
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" {on=1; next}
+            on && /^## \[/ {exit}
+            on {print}
+          ' CHANGELOG.md > notes.md
+          cat >> notes.md <<'EOF'
+
+          ---
+
+          ### Downloads
+
+          | Datei | Für |
+          |-------|-----|
+          | `…-windows.exe` | Windows 10/11 – Doppelklick startet Server und Browser |
+          | `…-macos.zip` | macOS (Apple Silicon) – entpacken, App per Rechtsklick → „Öffnen“ starten |
+          | `…-router.zip` | GL.iNet Slate 7 / OpenWrt – Ordner `Outfit-Dashboard` nach `/root/` kopieren, `sh openwrt/install.sh` |
+
+          Die Programme sind nicht signiert. Windows SmartScreen: „Weitere Informationen“ → „Trotzdem ausführen“.
+          macOS: beim ersten Start Rechtsklick → „Öffnen“, oder im Terminal `xattr -cr Outfit-Dashboard.app`.
+          EOF
+          cat notes.md
+
+      - name: Release veröffentlichen
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          ls -la release
+          gh release create "v${VERSION}" release/* \
+            --title "Outfit-Dashboard v${VERSION}" \
+            --notes-file notes.md \
+            --target "${GITHUB_SHA}"

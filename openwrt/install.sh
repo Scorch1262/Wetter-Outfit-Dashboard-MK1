@@ -55,8 +55,8 @@ if ! command -v python3 >/dev/null 2>&1 || ! command -v pip3 >/dev/null 2>&1; th
 	$PKG_UPDATE
 	$PKG_ADD python3 python3-pip ca-bundle ca-certificates
 fi
-if ! python3 -c "import flask" >/dev/null 2>&1; then
-	say "Flask installieren"
+if ! python3 -c "import flask, certifi" >/dev/null 2>&1; then
+	say "Flask und certifi installieren"
 	pip3 install --no-cache-dir -r "$SRC_DIR/requirements.txt"
 fi
 

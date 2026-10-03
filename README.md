@@ -4,8 +4,10 @@ Lokales Web-Dashboard, das aus dem eigenen Kleiderschrank bei jedem Aufruf ein
 **farblich passendes Outfit zum heutigen Wetter** zusammenstellt.
 Gestaltet im dunklen Lattice-Design der übrigen Dashboards, optimiert für das
 iPhone und gedacht für den Dauerbetrieb auf einem **GL.iNet Slate 7** (OpenWrt).
+Zusätzlich gibt es eine **Windows-EXE** und eine **macOS-App**, die per GitHub
+Actions automatisch gebaut und als Release veröffentlicht werden.
 
-Aktuelle Version: **v1.2.0**
+Aktuelle Version: **v1.3.0**
 
 > **Alles in einem Ordner:** `/root/Outfit-Dashboard` (auf dem Router
 > `root@GL-BE3600:~# Outfit-Dashboard`). Die Nutzerdaten liegen darin im
@@ -86,6 +88,11 @@ Ohne Wetterdaten (kein Standort / offline) zählen nur Farbe und Aktivität.
 ├── config.example.json     Vorlage für daten/config.json
 ├── templates/              base, index (Nutzer), settings, terms
 ├── static/                 style.css, common.js, user.js, settings.js, icon.svg
+├── .github/workflows/
+│   └── build-release.yml   GitHub Actions: EXE, Mac-App, Router-Paket, Release
+├── packaging/
+│   ├── outfit_dashboard.spec  PyInstaller-Spezifikation (Windows/macOS)
+│   └── make_icon.py        zeichnet das Programm-Icon beim Build
 ├── openwrt/
 │   ├── install.sh          Installation und Update (GL.iNet Slate 7)
 │   ├── update.sh           Update – ersetzt nur die Programmdateien
@@ -204,6 +211,91 @@ unter „Datenspeicher & Sicherung“.
 
 ---
 
+## Windows-EXE und macOS-App
+
+### Herunterladen
+
+Unter **Releases** im GitHub-Repo liegen pro Version:
+
+| Datei                                  | Für                                   |
+|----------------------------------------|---------------------------------------|
+| `Outfit-Dashboard-vX.Y.Z-windows.exe`  | Windows 10/11                         |
+| `Outfit-Dashboard-vX.Y.Z-macos.zip`    | macOS 11+ (Apple Silicon)             |
+| `Outfit-Dashboard-vX.Y.Z-router.zip`   | GL.iNet Slate 7 – enthält den Ordner `Outfit-Dashboard` |
+
+### Bedienung
+
+- **Doppelklick** startet den Server und öffnet die Seite im Standard-Browser.
+- Windows zeigt ein Konsolenfenster mit der Adresse fürs Netzwerk
+  (z. B. `http://192.168.8.20:8095` für das iPhone). Schließen des Fensters
+  beendet das Programm.
+- macOS hat kein Fenster – beenden über **Einstellungen → Programm beenden**
+  (der Knopf erscheint nur am eigenen Rechner).
+- Ein zweiter Doppelklick startet nichts doppelt, sondern öffnet nur den Browser.
+- Ist Port 8095 von einem anderen Programm belegt, wird automatisch 8096–8105
+  verwendet.
+- Beim ersten Start fragt die Firewall, ob Zugriffe aus dem Netzwerk erlaubt
+  werden – für das iPhone „Zulassen“ wählen.
+
+### Datenordner der Desktop-Versionen
+
+| Version     | Datenordner                                                         |
+|-------------|---------------------------------------------------------------------|
+| Windows-EXE | `daten\` neben der EXE (falls nicht beschreibbar: `%LOCALAPPDATA%\Outfit-Dashboard\daten`) |
+| macOS-App   | `~/Library/Application Support/Outfit-Dashboard/daten`              |
+
+Beim Update einfach die EXE bzw. App ersetzen – der Datenordner bleibt.
+Umzug zwischen Router und PC: **Einstellungen → Sicherung herunterladen** und
+auf dem anderen Gerät **Sicherung einspielen**.
+
+### Nicht signiert
+
+- **Windows SmartScreen:** „Weitere Informationen“ → „Trotzdem ausführen“
+- **macOS Gatekeeper:** App beim ersten Mal per **Rechtsklick → Öffnen** starten,
+  oder im Terminal: `xattr -cr /Applications/Outfit-Dashboard.app`
+
+---
+
+## GitHub Actions: Build und automatisches Release
+
+Workflow: `.github/workflows/build-release.yml`
+
+Bei **jedem Push** (und jedem Pull-Request):
+
+1. Version aus `version.py` lesen
+2. **Windows** (`windows-latest`) und **macOS** (`macos-latest`) parallel bauen
+   mit PyInstaller (`packaging/outfit_dashboard.spec`)
+3. Jedes gebaute Programm wird **probeweise gestartet** und muss auf
+   `/api/meta` mit der richtigen Version antworten
+4. Router-Paket bauen (Syntaxprüfung von Python- und Shell-Dateien)
+5. Alle Dateien als **Build-Artefakte** hochladen (30 Tage)
+
+Auf `main`/`master` zusätzlich:
+
+6. Existiert noch **kein Release `v<Version>`**, wird es automatisch erstellt –
+   mit Tag, Titel „Outfit-Dashboard v<Version>“, dem passenden Abschnitt aus
+   `CHANGELOG.md` als Beschreibung und allen drei Dateien.
+7. Existiert es schon, wird nur gebaut (Hinweis im Log: Version hochzählen).
+
+**Neues Release veröffentlichen:**
+`version.py` hochzählen → Abschnitt `## [X.Y.Z]` in `CHANGELOG.md` ergänzen → pushen.
+
+Voraussetzung im Repo: *Settings → Actions → General → Workflow permissions*
+auf **„Read and write permissions“** (für das Anlegen des Releases).
+Der Workflow setzt zusätzlich `permissions: contents: write`.
+
+### Lokal bauen
+
+```bash
+pip install -r requirements.txt pyinstaller pillow
+python packaging/make_icon.py
+pyinstaller --noconfirm --clean packaging/outfit_dashboard.spec
+```
+
+Ergebnis in `dist/` (Windows: `Outfit-Dashboard.exe`, macOS: `Outfit-Dashboard.app`).
+
+---
+
 ## Konfiguration (`config.json`)
 
 | Schlüssel               | Standard   | Bedeutung                                              |
@@ -215,6 +307,10 @@ unter „Datenspeicher & Sicherung“.
 | `max_backup_mb`         | `300`      | maximale Größe einer einzuspielenden Sicherung         |
 | `weather_cache_minutes` | `15`       | wie lange Wetterdaten zwischengespeichert werden       |
 | `weather_verify_ssl`    | `true`     | TLS-Zertifikate prüfen (nur bei Zertifikatsproblemen auf `false`) |
+| `open_browser`          | EXE/App: `true`, sonst `false` | Browser beim Start automatisch öffnen |
+
+Umgebungsvariablen: `OUTFIT_HOME` (Datenordner), `OUTFIT_CONFIG`
+(Konfigurationsdatei), `OUTFIT_PORT` (Port), `OUTFIT_OPEN_BROWSER` (`1`/`0`).
 
 Die Datei liegt unter `/root/Outfit-Dashboard/daten/config.json`.
 Ein abweichender Pfad kann über die Umgebungsvariable `OUTFIT_CONFIG` gesetzt werden.
@@ -248,6 +344,7 @@ Ein abweichender Pfad kann über die Umgebungsvariable `OUTFIT_CONFIG` gesetzt w
 | GET     | `/api/storage`                | Speicherort und -belegung               |
 | GET     | `/api/backup`                 | Sicherung als ZIP herunterladen         |
 | POST    | `/api/backup`                 | Sicherung einspielen (Feld `backup`)    |
+| POST    | `/api/shutdown`               | Desktop-Version beenden (nur vom eigenen Rechner) |
 
 ---
 

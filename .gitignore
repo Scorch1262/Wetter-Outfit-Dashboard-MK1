@@ -12,3 +12,9 @@ venv/
 # System
 .DS_Store
 Thumbs.db
+
+# Build (PyInstaller)
+build/
+dist/
+packaging/icon.png
+*.spec.bak
