@@ -17,16 +17,25 @@ import random
 # ---------------------------------------------------------------------------
 
 TYPES = [
-    {"id": "oberteil", "name": "Oberteil"},
+    {"id": "oberteil", "name": "Oberteil"},      # Kategorie mit Untertypen (siehe SUBTYPES)
     {"id": "hose", "name": "Hose"},
     {"id": "unterwaesche", "name": "Unterwäsche"},
     {"id": "schuhe", "name": "Schuhe"},
-    {"id": "jacke", "name": "Jacke"},
     {"id": "socken", "name": "Socken"},
     {"id": "kopfbedeckung", "name": "Kopfbedeckung"},
     {"id": "accessoire", "name": "Accessoire"},
     {"id": "sonstiges", "name": "Sonstiges"},
 ]
+# Untertypen der Kategorie Oberteil – von innen nach außen
+SUBTYPES = {
+    "oberteil": [
+        {"id": "tshirt", "name": "T-Shirt"},
+        {"id": "pullover", "name": "Pullover"},
+        {"id": "jacke", "name": "Jacke"},
+    ],
+}
+SUBTYPE_IDS = {t: {x["id"] for x in subs} for t, subs in SUBTYPES.items()}
+DEFAULT_SUBTYPE = {"oberteil": "tshirt"}
 TYPE_IDS = {t["id"] for t in TYPES}
 
 # ---------------------------------------------------------------------------
@@ -69,13 +78,41 @@ _NEUTRAL_SPECIAL = {
     frozenset(("denim", "marine")): 0.7,
 }
 
+# ---------------------------------------------------------------------------
+# 6 Stufen für Temperatur und Niederschlag
+# lo/hi: Grenzen in °C bzw. mm/Tag (unten inklusive, oben exklusiv)
+# ---------------------------------------------------------------------------
+
+TEMP_LEVELS = [
+    {"level": 1, "name": "Frost", "lo": -20, "hi": 0, "color": "#4fa3ff"},
+    {"level": 2, "name": "Kalt", "lo": 0, "hi": 8, "color": "#5fc3e4"},
+    {"level": 3, "name": "Kühl", "lo": 8, "hi": 14, "color": "#35d0ba"},
+    {"level": 4, "name": "Mild", "lo": 14, "hi": 19, "color": "#9ed36a"},
+    {"level": 5, "name": "Warm", "lo": 19, "hi": 25, "color": "#ffb84d"},
+    {"level": 6, "name": "Heiß", "lo": 25, "hi": 40, "color": "#ff6b4d"},
+]
+RAIN_LEVELS = [
+    {"level": 1, "name": "Trocken", "lo": 0, "hi": 0.2, "color": "#c9e2ff"},
+    {"level": 2, "name": "Vereinzelt", "lo": 0.2, "hi": 1, "color": "#9fcaff"},
+    {"level": 3, "name": "Leicht", "lo": 1, "hi": 3, "color": "#74afff"},
+    {"level": 4, "name": "Mäßig", "lo": 3, "hi": 8, "color": "#4f8ff0"},
+    {"level": 5, "name": "Stark", "lo": 8, "hi": 15, "color": "#3268d0"},
+    {"level": 6, "name": "Unwetter", "lo": 15, "hi": 30, "color": "#2347a8"},
+]
+TEMP_SCALE = (TEMP_LEVELS[0]["lo"], TEMP_LEVELS[-1]["hi"])
+RAIN_SCALE = (RAIN_LEVELS[0]["lo"], RAIN_LEVELS[-1]["hi"])
+
+# Standard-Regeln (in den Einstellungen änderbar)
+DEFAULT_RULES = {
+    "pullover_max_temp": 16,   # ab dieser Temperatur kein Pullover mehr
+    "jacket_max_temp": 12,     # ab dieser Temperatur keine Jacke mehr …
+    "jacket_rain_level": 4,    # … außer der Niederschlag erreicht diese Stufe
+}
+
 # Gewichte der Bewertung
 W_TEMP = 0.40
 W_RAIN = 0.20
 W_COLOR = 0.40
-
-TEMP_SCALE = (-20, 40)   # °C – Darstellung und Eingabebereich
-RAIN_SCALE = (0, 30)     # mm/Tag
 
 
 def color_pair_score(a, b):
@@ -111,25 +148,81 @@ def color_pair_score(a, b):
     return score
 
 
-def _range_fit(lo, hi, value, softness):
+def level_of(value, levels):
+    """Stufe (1–6) zu einem Messwert."""
     if value is None:
+        return None
+    for lv in levels:
+        if value < lv["hi"]:
+            return lv["level"]
+    return levels[-1]["level"]
+
+
+def range_to_levels(lo, hi, levels):
+    """Wandelt einen alten Wertebereich (°C/mm) in einen Stufenbereich um."""
+    a = level_of(lo, levels)
+    b = level_of(hi, levels)
+    # liegt die Obergrenze genau auf einer Stufengrenze, zählt die Stufe darüber nicht mit
+    if b > a and hi <= levels[b - 1]["lo"]:
+        b -= 1
+    return a, b
+
+
+def levels_to_range(a, b, levels):
+    return levels[a - 1]["lo"], levels[b - 1]["hi"]
+
+
+def clamp_level(v, default):
+    try:
+        return max(1, min(6, int(round(float(v)))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _level_fit(a, b, level):
+    """1.0 innerhalb der Stufen, 1 Stufe daneben 0.55, 2 Stufen 0.2, sonst 0."""
+    if level is None:
         return 1.0
-    if lo <= value <= hi:
+    if a <= level <= b:
         return 1.0
-    dist = (lo - value) if value < lo else (value - hi)
-    return max(0.0, 1.0 - dist / softness)
+    dist = (a - level) if level < a else (level - b)
+    return {1: 0.55, 2: 0.2}.get(dist, 0.0)
 
 
 def temp_fit(item, target):
     if not target:
         return 1.0
-    return _range_fit(item.get("temp_min", -20), item.get("temp_max", 40), target["temp"], 10.0)
+    return _level_fit(item.get("temp_level_min", 1), item.get("temp_level_max", 6), target.get("temp_level"))
 
 
 def rain_fit(item, target):
     if not target:
         return 1.0
-    return _range_fit(item.get("rain_min", 0), item.get("rain_max", 30), target["rain"], 6.0)
+    return _level_fit(item.get("rain_level_min", 1), item.get("rain_level_max", 6), target.get("rain_level"))
+
+
+def enrich_target(target):
+    """Ergänzt die Wetter-Zielwerte um ihre Stufen."""
+    if not target:
+        return None
+    t = dict(target)
+    t["temp_level"] = level_of(t["temp"], TEMP_LEVELS)
+    t["rain_level"] = level_of(t["rain"], RAIN_LEVELS)
+    return t
+
+
+def layer_rules(target, rules):
+    """Welche Oberteil-Schichten heute vorgeschlagen werden."""
+    r = dict(DEFAULT_RULES)
+    r.update(rules or {})
+    if not target:
+        return {"pullover": False, "jacket": False, "jacket_reason": None, "rules": r,
+                "note": "Ohne Wetterdaten werden kein Pullover und keine Jacke vorgeschlagen."}
+    pullover = target["temp"] < r["pullover_max_temp"]
+    cold = target["temp"] < r["jacket_max_temp"]
+    wet = target["rain_level"] >= r["jacket_rain_level"]
+    reason = "kalt" if cold else ("regen" if wet else None)
+    return {"pullover": pullover, "jacket": cold or wet, "jacket_reason": reason, "rules": r, "note": None}
 
 
 def _weighted_choice(rng, candidates, sharpness=0.07):
@@ -142,12 +235,23 @@ def _weighted_choice(rng, candidates, sharpness=0.07):
     return rng.choices([p for _, p in candidates], weights=weights, k=1)[0]
 
 
-def _by_type(items, type_id):
-    return [i for i in items if i.get("type") == type_id]
+def _by_type(items, type_id, subtype=None):
+    return [i for i in items if i.get("type") == type_id and (subtype is None or i.get("subtype") == subtype)]
 
 
 def _matches_activity(item, activity):
     return activity in (None, "", "alle") or activity in (item.get("activities") or [])
+
+
+def _weather_score(item, target):
+    return W_TEMP * temp_fit(item, target) + W_RAIN * rain_fit(item, target)
+
+
+def _color_vs(item, others):
+    ref = [o.get("color") for o in others if o]
+    if not ref:
+        return 0.8
+    return sum(color_pair_score(item.get("color"), c) for c in ref) / len(ref)
 
 
 def _piece(slot, slot_name, item, target, reason=None):
@@ -164,74 +268,94 @@ def _piece(slot, slot_name, item, target, reason=None):
     }
 
 
-def build_outfit(items, activity=None, target=None, rng=None):
+def build_outfit(items, activity=None, target=None, rng=None, rules=None):
     rng = rng or random.Random()
-    tops_all = _by_type(items, "oberteil")
+    target = enrich_target(target)
+    layers = layer_rules(target, rules)
+    act = lambda lst: [i for i in lst if _matches_activity(i, activity)]
+
+    tshirts_all = _by_type(items, "oberteil", "tshirt")
+    pullis_all = _by_type(items, "oberteil", "pullover")
+    jackets_all = _by_type(items, "oberteil", "jacke")
     pants_all = _by_type(items, "hose")
-    tops = [i for i in tops_all if _matches_activity(i, activity)]
-    pants = [i for i in pants_all if _matches_activity(i, activity)]
+    tshirts, pullis, jackets, pants = act(tshirts_all), act(pullis_all), act(jackets_all), act(pants_all)
     under = _by_type(items, "unterwaesche")
     shoes = _by_type(items, "schuhe")
 
-    # --- Oberteil + Hose gemeinsam bewerten -----------------------------
-    pairs = [(t, p) for t in tops for p in pants]
-    if len(pairs) > 5000:  # Schutz für sehr große Kleiderschränke
+    # Basis-Oberteil: T-Shirt; gibt es keins, ersatzweise ein Pullover (falls erlaubt)
+    base_pool = tshirts or (pullis if layers["pullover"] else [])
+
+    # --- Basis-Oberteil + Hose gemeinsam bewerten -----------------------
+    pairs = [(t, p) for t in base_pool for p in pants]
+    if len(pairs) > 5000:
         pairs = rng.sample(pairs, 5000)
-    combo_candidates = []
+    cands = []
     for t, p in pairs:
-        w_temp = (temp_fit(t, target) + temp_fit(p, target)) / 2
-        w_rain = (rain_fit(t, target) + rain_fit(p, target)) / 2
-        col = color_pair_score(t.get("color"), p.get("color"))
-        combo_candidates.append((W_TEMP * w_temp + W_RAIN * w_rain + W_COLOR * col, (t, p)))
-
-    top = pant = None
-    if combo_candidates:
-        top, pant = _weighted_choice(rng, combo_candidates)
+        w = (_weather_score(t, target) + _weather_score(p, target)) / 2
+        cands.append((w + W_COLOR * color_pair_score(t.get("color"), p.get("color")), (t, p)))
+    base = pant = None
+    if cands:
+        base, pant = _weighted_choice(rng, cands)
     else:
-        # nur eines der beiden vorhanden → einzeln nach Wetter auswählen
-        if tops:
-            top = _weighted_choice(rng, [(W_TEMP * temp_fit(t, target) + W_RAIN * rain_fit(t, target), t)
-                                         for t in tops])
+        if base_pool:
+            base = _weighted_choice(rng, [(_weather_score(t, target), t) for t in base_pool])
         if pants:
-            pant = _weighted_choice(rng, [(W_TEMP * temp_fit(p, target) + W_RAIN * rain_fit(p, target), p)
-                                          for p in pants])
+            pant = _weighted_choice(rng, [(_weather_score(p, target), p) for p in pants])
 
-    # --- Schuhe: Wetter + Farbe zu Oberteil/Hose (+ Bonus Aktivität) ----
+    # --- Pullover über dem T-Shirt ----------------------------------------
+    pulli = None
+    if layers["pullover"] and base is not None and base.get("subtype") == "tshirt" and pullis:
+        pulli = _weighted_choice(rng, [(_weather_score(x, target) + W_COLOR * _color_vs(x, [base, pant]), x)
+                                       for x in pullis])
+
+    # --- Jacke als äußerste Schicht --------------------------------------
+    jacket = None
+    if layers["jacket"] and jackets:
+        jacket = _weighted_choice(rng, [(_weather_score(x, target) + W_COLOR * _color_vs(x, [pulli or base, pant]), x)
+                                        for x in jackets])
+
+    # --- Schuhe: Wetter + Farbe (+ Bonus Aktivität) ------------------------
     shoe = None
     if shoes:
-        cands = []
+        sc = []
         for s in shoes:
-            ref = [x.get("color") for x in (top, pant) if x]
-            col = sum(color_pair_score(s.get("color"), c) for c in ref) / len(ref) if ref else 0.8
             bonus = 0.1 if activity not in (None, "", "alle") and activity in (s.get("activities") or []) else 0.0
-            score = 0.35 * temp_fit(s, target) + 0.30 * rain_fit(s, target) + 0.25 * col + bonus
-            cands.append((score, s))
-        shoe = _weighted_choice(rng, cands)
+            score = (0.35 * temp_fit(s, target) + 0.30 * rain_fit(s, target)
+                     + 0.25 * _color_vs(s, [jacket or pulli or base, pant]) + bonus)
+            sc.append((score, s))
+        shoe = _weighted_choice(rng, sc)
 
-    # --- Unterwäsche: Temperatur + Bonus Aktivität, sonst zufällig -------
+    # --- Unterwäsche: Temperatur + Bonus Aktivität -------------------------
     undie = None
     if under:
-        cands = []
+        uc = []
         for u in under:
             bonus = 0.15 if activity not in (None, "", "alle") and activity in (u.get("activities") or []) else 0.0
-            cands.append((0.6 * temp_fit(u, target) + bonus, u))
-        undie = _weighted_choice(rng, cands, sharpness=0.12)
+            uc.append((0.6 * temp_fit(u, target) + bonus, u))
+        undie = _weighted_choice(rng, uc, sharpness=0.12)
 
-    # --- Gesamt-Farbharmonie der sichtbaren Teile ------------------------
-    visible = [x.get("color") for x in (top, pant, shoe) if x]
+    # --- Farbharmonie der sichtbaren Teile ---------------------------------
+    visible = [x.get("color") for x in (jacket, pulli, base, pant, shoe) if x]
     pair_scores = [color_pair_score(visible[i], visible[j])
                    for i in range(len(visible)) for j in range(i + 1, len(visible))]
     harmony = round(sum(pair_scores) / len(pair_scores), 2) if pair_scores else None
 
-    def missing(type_name, all_items, filtered):
+    def missing(name, all_items, filtered):
         if not all_items:
-            return f"Noch kein Kleidungsstück vom Typ „{type_name}“ angelegt."
+            return f"Noch kein Kleidungsstück „{name}“ angelegt."
         if not filtered:
-            return f"Kein Stück vom Typ „{type_name}“ mit dieser Aktivität."
+            return f"Kein Stück „{name}“ mit dieser Aktivität."
         return None
 
-    pieces = [
-        _piece("oberteil", "Oberteil", top, target, missing("Oberteil", tops_all, tops)),
+    pieces = []
+    if layers["jacket"]:
+        pieces.append(_piece("jacke", "Oberteil · Jacke", jacket, target, missing("Jacke", jackets_all, jackets)))
+    if layers["pullover"] and (base is None or base.get("subtype") == "tshirt"):
+        pieces.append(_piece("pullover", "Oberteil · Pullover", pulli, target,
+                             missing("Pullover", pullis_all, pullis)))
+    base_name = "Oberteil · " + ("Pullover" if base is not None and base.get("subtype") == "pullover" else "T-Shirt")
+    pieces.append(_piece("oberteil", base_name, base, target, missing("T-Shirt", tshirts_all, tshirts)))
+    pieces += [
         _piece("hose", "Hose", pant, target, missing("Hose", pants_all, pants)),
         _piece("unterwaesche", "Unterwäsche", undie, target, missing("Unterwäsche", under, under)),
         _piece("schuhe", "Schuhe (Empfehlung)", shoe, target, missing("Schuhe", shoes, shoes)),
@@ -243,5 +367,6 @@ def build_outfit(items, activity=None, target=None, rng=None):
         "harmony": harmony,
         "weather_score": weather_score,
         "target": target,
+        "layers": layers,
         "activity": activity or "alle",
     }

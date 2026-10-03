@@ -69,7 +69,8 @@ DEFAULT_CONFIG = {
 }
 
 DEFAULT_SETTINGS = {
-    "schema": 1,
+    "schema": 2,
+    "rules": dict(ofit.DEFAULT_RULES),
     "location": {"name": "", "lat": None, "lon": None},
     "activities": [
         {"id": "alltag", "name": "Alltag"},
@@ -260,17 +261,38 @@ clothes_store = JsonStore(os.path.join(DATA_DIR, "clothes.json"), DEFAULT_CLOTHE
 def normalize_item(item):
     """Ergänzt fehlende Felder – ältere oder künftige Datenstände bleiben lesbar."""
     item.setdefault("name", "Ohne Namen")
+    # bis v1.4.0 war "Jacke" ein eigener Typ – jetzt Untertyp von Oberteil
+    if item.get("type") == "jacke":
+        item["type"], item["subtype"] = "oberteil", "jacke"
     if item.get("type") not in ofit.TYPE_IDS:
         item["type"] = "sonstiges"
+    subs = ofit.SUBTYPE_IDS.get(item["type"])
+    if subs:
+        if item.get("subtype") not in subs:
+            item["subtype"] = ofit.DEFAULT_SUBTYPE[item["type"]]
+    else:
+        item.pop("subtype", None)
     if item.get("color") not in ofit.COLOR_BY_ID:
         item["color"] = "grau"
     if not isinstance(item.get("activities"), list):
         item["activities"] = []
-    for key, default in (("temp_min", 5), ("temp_max", 25), ("rain_min", 0), ("rain_max", 5)):
-        try:
-            item[key] = float(item.get(key, default))
-        except (TypeError, ValueError):
-            item[key] = float(default)
+
+    # bis v1.4.0: freie °C-/mm-Bereiche → jetzt 6 Stufen
+    for kind, levels, dmin, dmax in (("temp", ofit.TEMP_LEVELS, 5, 25), ("rain", ofit.RAIN_LEVELS, 0, 5)):
+        kmin, kmax = f"{kind}_level_min", f"{kind}_level_max"
+        if kmin not in item or kmax not in item:
+            try:
+                lo, hi = float(item.get(f"{kind}_min", dmin)), float(item.get(f"{kind}_max", dmax))
+            except (TypeError, ValueError):
+                lo, hi = dmin, dmax
+            item[kmin], item[kmax] = ofit.range_to_levels(min(lo, hi), max(lo, hi), levels)
+        a = ofit.clamp_level(item[kmin], 1)
+        b = ofit.clamp_level(item[kmax], 6)
+        if a > b:
+            a, b = b, a
+        item[kmin], item[kmax] = a, b
+        # °C/mm-Grenzen der Stufen mitschreiben (lesbar für ältere Versionen)
+        item[f"{kind}_min"], item[f"{kind}_max"] = ofit.levels_to_range(a, b, levels)
     item.setdefault("image", "")
     item.setdefault("created", 0)
     return item
@@ -353,6 +375,14 @@ def parse_item_fields(form, existing=None):
     if typ not in ofit.TYPE_IDS:
         errors.append("Unbekannter Typ.")
     item["type"] = typ
+    subs = ofit.SUBTYPE_IDS.get(typ)
+    if subs:
+        sub = form.get("subtype")
+        if sub not in subs:
+            errors.append("Bitte die Art des Oberteils wählen (T-Shirt, Pullover oder Jacke).")
+        item["subtype"] = sub
+    else:
+        item.pop("subtype", None)
 
     color = form.get("color")
     if color not in ofit.COLOR_BY_ID:
@@ -363,18 +393,16 @@ def parse_item_fields(form, existing=None):
     acts = form.getlist("activities") if hasattr(form, "getlist") else form.get("activities", [])
     item["activities"] = [a for a in acts if a in valid_acts]
 
-    t_lo, t_hi = ofit.TEMP_SCALE
-    r_lo, r_hi = ofit.RAIN_SCALE
-    tmin = clamp_num(form.get("temp_min"), t_lo, t_hi, 5)
-    tmax = clamp_num(form.get("temp_max"), t_lo, t_hi, 25)
-    rmin = clamp_num(form.get("rain_min"), r_lo, r_hi, 0)
-    rmax = clamp_num(form.get("rain_max"), r_lo, r_hi, 5)
-    if tmin > tmax:
-        tmin, tmax = tmax, tmin
-    if rmin > rmax:
-        rmin, rmax = rmax, rmin
-    item.update({"temp_min": tmin, "temp_max": tmax, "rain_min": rmin, "rain_max": rmax})
-    return item, errors
+    # Temperatur und Niederschlag in 6 Stufen
+    for kind, d_a, d_b in (("temp", 2, 5), ("rain", 1, 3)):
+        a = ofit.clamp_level(form.get(f"{kind}_level_min"), d_a)
+        b = ofit.clamp_level(form.get(f"{kind}_level_max"), d_b)
+        if a > b:
+            a, b = b, a
+        item[f"{kind}_level_min"], item[f"{kind}_level_max"] = a, b
+    if errors:
+        return item, errors
+    return normalize_item(item), errors
 
 
 def save_upload(file_storage, item_id):
@@ -447,12 +475,38 @@ def api_meta():
         "version": __version__,
         "can_shutdown": FROZEN and _is_local_request(),
         "types": ofit.TYPES,
+        "subtypes": ofit.SUBTYPES,
         "colors": ofit.COLORS,
-        "temp_scale": ofit.TEMP_SCALE,
-        "rain_scale": ofit.RAIN_SCALE,
+        "temp_levels": ofit.TEMP_LEVELS,
+        "rain_levels": ofit.RAIN_LEVELS,
+        "rules": current_rules(s),
         "activities": s["activities"],
         "location": s["location"],
     })
+
+
+def current_rules(settings=None):
+    s = settings or settings_store.load()
+    r = dict(ofit.DEFAULT_RULES)
+    r.update({k: v for k, v in (s.get("rules") or {}).items() if k in r})
+    return r
+
+
+@app.post("/api/settings/rules")
+def api_settings_rules():
+    body = request.get_json(silent=True) or {}
+    r = current_rules()
+    for key in ("pullover_max_temp", "jacket_max_temp"):
+        if key in body:
+            r[key] = clamp_num(body[key], -20, 40, r[key])
+    if "jacket_rain_level" in body:
+        r["jacket_rain_level"] = ofit.clamp_level(body["jacket_rain_level"], r["jacket_rain_level"])
+
+    def apply(data):
+        data["rules"] = r
+    settings_store.update(apply)
+    log.info("Regeln gespeichert: %s", r)
+    return jsonify({"ok": True, "rules": r})
 
 
 @app.get("/api/weather")
@@ -466,7 +520,8 @@ def api_outfit():
     items = load_items()
     w = current_weather()
     target = w.get("target") if w.get("ok") else None
-    result = ofit.build_outfit(items, activity=activity, target=target, rng=random.SystemRandom())
+    result = ofit.build_outfit(items, activity=activity, target=target, rng=random.SystemRandom(),
+                               rules=current_rules())
     result["weather_ok"] = bool(target)
     return jsonify(result)
 

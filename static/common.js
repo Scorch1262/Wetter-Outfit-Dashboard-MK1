@@ -53,36 +53,53 @@ function colorBg(color) {
   return color ? color.hex : "#555";
 }
 
+/* Stufen-Hilfen ---------------------------------------------------------- */
+function levelOf(value, levels) {
+  if (value === null || value === undefined) return null;
+  for (const lv of levels) if (value < lv.hi) return lv.level;
+  return levels[levels.length - 1].level;
+}
+
+function levelName(levels, n) {
+  const lv = levels.find(l => l.level === n);
+  return lv ? lv.name : "–";
+}
+
+function levelRangeText(levels, a, b) {
+  return a === b ? levelName(levels, a) : `${levelName(levels, a)} – ${levelName(levels, b)}`;
+}
+
+function levelTitle(kind, lv) {
+  const u = kind === "temp" ? "°C" : "mm";
+  if (lv.level === 1) return `${lv.name}: unter ${fmtNum(lv.hi, lv.hi % 1 ? 1 : 0)} ${u}`;
+  if (lv.level === 6) return `${lv.name}: ab ${fmtNum(lv.lo, 0)} ${u}`;
+  return `${lv.name}: ${fmtNum(lv.lo, lv.lo % 1 ? 1 : 0)}–${fmtNum(lv.hi, lv.hi % 1 ? 1 : 0)} ${u}`;
+}
+
 /**
- * Balkendiagramm für einen Wertebereich.
- * kind: "temp" | "rain", scale: [min, max], marker: Tageswert oder null
+ * Balkendiagramm mit 6 Stufen.
+ * kind: "temp" | "rain", a/b: Stufenbereich (1–6), today: Stufe des Tages oder null
+ * opts.labels: Stufennamen unter den Segmenten anzeigen
+ * opts.select: Segmente anklickbar (data-level), opts.from: ab dieser Stufe markieren
  */
-function rangeBar(kind, lo, hi, scale, marker = null) {
-  const [smin, smax] = scale;
-  const span = smax - smin;
-  const pct = v => Math.max(0, Math.min(100, ((v - smin) / span) * 100));
-  const left = pct(lo);
-  const width = Math.max(pct(hi) - left, 1.5);
-  const unit = kind === "temp" ? "°C" : "mm";
-  const title = kind === "temp" ? "Temperatur" : "Niederschlag";
-  const digits = kind === "rain" && (lo % 1 || hi % 1) ? 1 : 0;
-  let fillStyle = `left:${left}%;width:${width}%;`;
-  if (kind === "temp") {
-    // Verlauf bezieht sich auf die ganze Skala → Farbe entspricht absoluter Temperatur
-    const w = width / 100, l = left / 100;
-    const pos = w >= 1 ? 0 : (l / (1 - w)) * 100;
-    fillStyle += `background-size:${(100 / width) * 100}% 100%;background-position:${pos}% 0;`;
-  }
-  const zero = kind === "temp" && smin < 0 && smax > 0
-    ? `<span class="bar-zero" style="left:${pct(0)}%"></span>` : "";
-  const mark = marker !== null && marker !== undefined
-    ? `<span class="bar-marker" style="left:${pct(marker)}%" title="Heute: ${fmtNum(marker, 1)} ${unit}"></span>` : "";
-  const mid = kind === "temp" ? `<span>0</span>` : `<span>${(smin + smax) / 2}</span>`;
+function levelBar(kind, a, b, levels, today = null, opts = {}) {
+  const title = opts.title || (kind === "temp" ? "Temperatur" : "Niederschlag");
+  const right = opts.rightText !== undefined ? opts.rightText : levelRangeText(levels, a, b);
+  const segs = levels.map(lv => {
+    const on = lv.level >= a && lv.level <= b;
+    const cls = ["seg", on ? "on" : "", lv.level === today ? "today" : ""].join(" ");
+    const tag = opts.select ? "button type=\"button\"" : "span";
+    const end = opts.select ? "button" : "span";
+    return `<${tag} class="${cls}" data-level="${lv.level}" title="${esc(levelTitle(kind, lv))}"
+      style="--seg:${lv.color}">${lv.level === today ? "<i></i>" : ""}</${end}>`;
+  }).join("");
+  const labels = opts.labels
+    ? `<div class="seg-labels">${levels.map(lv => `<span>${esc(lv.name)}</span>`).join("")}</div>` : "";
   return `
-    <div class="bar bar-${kind}">
-      <div class="bar-label"><span>${title}</span><b>${fmtNum(lo, digits)} – ${fmtNum(hi, digits)} ${unit}</b></div>
-      <div class="bar-track">${zero}<span class="bar-fill" style="${fillStyle}"></span>${mark}</div>
-      <div class="bar-scale"><span>${smin}</span>${mid}<span>${smax} ${unit}</span></div>
+    <div class="bar lbar lbar-${kind}${opts.select ? " lbar-select" : ""}">
+      <div class="bar-label"><span>${esc(title)}</span><b>${esc(right)}</b></div>
+      <div class="segs">${segs}</div>
+      ${labels}
     </div>`;
 }
 

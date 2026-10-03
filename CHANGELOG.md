@@ -2,6 +2,34 @@
 
 Alle Änderungen am Outfit-Dashboard-MK1. Versionierung nach Semantic Versioning.
 
+## [1.5.0] – 2026-10-03
+
+### Neu
+- **Oberteil ist eine Kategorie** mit den Untertypen T-Shirt, Pullover und Jacke
+- Outfit-Zusammenstellung in Schichten: T-Shirt, darüber Pullover, außen Jacke
+- Einstellungen → **Regeln für Oberteile**:
+  - Grenztemperatur, ab der kein Pullover mehr vorgeschlagen wird (Standard 16 °C)
+  - Grenztemperatur, ab der keine Jacke mehr vorgeschlagen wird (Standard 12 °C),
+    außer die Niederschlagsvorhersage erreicht die per Balken gewählte Stufe
+    (Standard „Mäßig“)
+- Hinweiszeile im Outfit-Reiter: Tageswerte mit Stufe und warum Pullover/Jacke
+  vorgeschlagen werden oder nicht
+- Kleiderschrank-Filter für T-Shirt, Pullover und Jacke
+- API `POST /api/settings/rules`
+
+### Geändert
+- Temperatur- und Niederschlags-Balken zeigen nur noch **6 Stufen**
+  (Frost … Heiß bzw. Trocken … Unwetter), heutige Stufe markiert
+- Eingabe im Formular über 6-stufige Schieberegler „von/bis“
+- Wetterpassung rechnet in Stufen (gleich 100 %, ±1 Stufe 55 %, ±2 Stufen 20 %)
+- Farbharmonie berücksichtigt alle sichtbaren Schichten
+
+### Datenübernahme
+- Typ „Jacke“ (bis v1.4.0) → Oberteil · Jacke; übrige Oberteile → Oberteil · T-Shirt
+- °C-/mm-Bereiche werden in Stufen umgerechnet; die Stufengrenzen werden
+  zusätzlich als `temp_min/max` bzw. `rain_min/max` gespeichert
+- `settings.json` Schema 2 mit Abschnitt `rules`
+
 ## [1.4.0] – 2026-10-03
 
 ### Geändert

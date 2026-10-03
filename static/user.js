@@ -12,6 +12,12 @@ const state = {
 const colorById = id => (state.meta.colors.find(c => c.id === id) || null);
 const typeName = id => ((state.meta.types.find(t => t.id === id) || {}).name || id);
 const actName = id => ((state.meta.activities.find(a => a.id === id) || {}).name || id);
+const subName = it => {
+  const subs = (state.meta.subtypes || {})[it.type] || [];
+  return (subs.find(x => x.id === it.subtype) || {}).name || "";
+};
+const itemTypeName = it => subName(it) || typeName(it.type);
+const L = () => ({ t: state.meta.temp_levels, r: state.meta.rain_levels });
 
 /* ---------------- Wetter ---------------- */
 function renderWeather() {
@@ -81,6 +87,7 @@ function renderOutfit(o) {
   $("#outfitScores").innerHTML =
     scoreBadge("Farbharmonie", o.harmony) + scoreBadge("Wetter", o.weather_score);
   const target = o.target;
+  renderRuleInfo(o);
   $("#outfitStack").innerHTML = o.pieces.map(p => {
     if (!p.item) {
       return `<div class="piece empty"><div class="piece-body">
@@ -89,10 +96,9 @@ function renderOutfit(o) {
       </div></div>`;
     }
     const it = p.item, col = colorById(it.color);
-    const bars = target
-      ? rangeBar("temp", it.temp_min, it.temp_max, state.meta.temp_scale, target.temp) +
-        rangeBar("rain", it.rain_min, it.rain_max, state.meta.rain_scale, target.rain)
-      : "";
+    const bars =
+      levelBar("temp", it.temp_level_min, it.temp_level_max, L().t, target ? target.temp_level : null) +
+      levelBar("rain", it.rain_level_min, it.rain_level_max, L().r, target ? target.rain_level : null);
     return `<article class="piece">
       <div class="piece-img"><img src="/bilder/${encodeURIComponent(it.image)}" alt="${esc(it.name)}" loading="lazy"></div>
       <div class="piece-body">
@@ -104,6 +110,21 @@ function renderOutfit(o) {
       </div>
     </article>`;
   }).join("");
+}
+
+function renderRuleInfo(o) {
+  const el = $("#outfitRules");
+  const ly = o.layers || {};
+  if (!o.target) { el.innerHTML = ly.note ? esc(ly.note) : ""; return; }
+  const r = ly.rules || {};
+  const t = o.target;
+  const jacke = ly.jacket
+    ? (ly.jacket_reason === "regen" ? "Jacke wegen Niederschlag" : "Jacke")
+    : "keine Jacke";
+  el.innerHTML = `Heute <b>${fmtNum(t.temp, 1)} °C · ${esc(levelName(L().t, t.temp_level))}</b>,
+    <b>${fmtNum(t.rain, 1)} mm · ${esc(levelName(L().r, t.rain_level))}</b> →
+    ${ly.pullover ? "Pullover" : "kein Pullover"} (unter ${fmtNum(r.pullover_max_temp)} °C),
+    ${jacke} (unter ${fmtNum(r.jacket_max_temp)} °C oder ab „${esc(levelName(L().r, r.jacket_rain_level))}“)`;
 }
 
 async function loadOutfit() {
@@ -118,9 +139,21 @@ async function loadOutfit() {
 $("#btnShuffle").addEventListener("click", loadOutfit);
 
 /* ---------------- Kleiderschrank ---------------- */
+function filterKey(it) { return it.subtype ? `${it.type}:${it.subtype}` : it.type; }
+
+function filterOptions() {
+  const opts = [];
+  for (const t of state.meta.types) {
+    const subs = (state.meta.subtypes || {})[t.id];
+    if (subs) subs.forEach(x => opts.push({ id: `${t.id}:${x.id}`, name: x.name }));
+    else opts.push(t);
+  }
+  return opts;
+}
+
 function renderTypeFilter() {
-  const present = new Set(state.clothes.map(c => c.type));
-  const types = [{ id: "alle", name: "Alle" }, ...state.meta.types.filter(t => present.has(t.id))];
+  const present = new Set(state.clothes.map(filterKey));
+  const types = [{ id: "alle", name: "Alle" }, ...filterOptions().filter(t => present.has(t.id))];
   $("#typeFilter").innerHTML = types.map(t =>
     `<span class="chip ${t.id === state.typeFilter ? "on" : ""}" data-type="${esc(t.id)}">${esc(t.name)}</span>`
   ).join("");
@@ -137,14 +170,14 @@ $("#typeFilter").addEventListener("click", e => {
 function renderWardrobe() {
   const grid = $("#wardrobeGrid");
   const target = state.weather && state.weather.ok ? state.weather.target : null;
-  const list = state.clothes.filter(c => state.typeFilter === "alle" || c.type === state.typeFilter);
+  const list = state.clothes.filter(c => state.typeFilter === "alle" || filterKey(c) === state.typeFilter);
   if (!state.clothes.length) {
     grid.innerHTML = `<div class="dim center pad" style="grid-column:1/-1">Noch keine Kleidungsstücke angelegt.<br>
       <a href="/einstellungen">→ In den Einstellungen anlegen</a></div>`;
     return;
   }
-  const order = state.meta.types.map(t => t.id);
-  list.sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type) || a.name.localeCompare(b.name, "de"));
+  const order = filterOptions().map(t => t.id);
+  list.sort((a, b) => order.indexOf(filterKey(a)) - order.indexOf(filterKey(b)) || a.name.localeCompare(b.name, "de"));
   grid.innerHTML = list.map(it => {
     const col = colorById(it.color);
     const tags = (it.activities || []).length
@@ -154,9 +187,9 @@ function renderWardrobe() {
       <div class="w-img"><img src="/bilder/${encodeURIComponent(it.image)}" alt="${esc(it.name)}" loading="lazy"></div>
       <div class="w-body">
         <div class="w-name">${esc(it.name)}</div>
-        <div class="w-meta"><span class="swatch-dot" style="background:${colorBg(col)}"></span>${esc(typeName(it.type))} · ${esc(col ? col.name : "")}</div>
-        ${rangeBar("temp", it.temp_min, it.temp_max, state.meta.temp_scale, target ? target.temp : null)}
-        ${rangeBar("rain", it.rain_min, it.rain_max, state.meta.rain_scale, target ? target.rain : null)}
+        <div class="w-meta"><span class="swatch-dot" style="background:${colorBg(col)}"></span>${esc(itemTypeName(it))} · ${esc(col ? col.name : "")}</div>
+        ${levelBar("temp", it.temp_level_min, it.temp_level_max, L().t, target ? levelOf(target.temp, L().t) : null)}
+        ${levelBar("rain", it.rain_level_min, it.rain_level_max, L().r, target ? levelOf(target.rain, L().r) : null)}
         <div class="w-tags">${tags}</div>
       </div>
     </article>`;

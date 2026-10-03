@@ -9,10 +9,60 @@ const S = {
   color: null,
   selActs: new Set(),
   photoBlob: null,
+  subtype: null,
+  rules: null,
 };
 
 const colorById = id => (S.meta.colors.find(c => c.id === id) || null);
 const typeName = id => ((S.meta.types.find(t => t.id === id) || {}).name || id);
+const subsOf = type => (S.meta.subtypes || {})[type] || [];
+const itemTypeName = it => {
+  const sub = subsOf(it.type).find(x => x.id === it.subtype);
+  return sub ? `${typeName(it.type)} · ${sub.name}` : typeName(it.type);
+};
+const TL = () => S.meta.temp_levels;
+const RL = () => S.meta.rain_levels;
+
+/* ================= Regeln für Oberteile ================= */
+let rulesTimer = null;
+function renderRules() {
+  const r = S.rules;
+  $("#rulePullover").value = r.pullover_max_temp;
+  $("#ruleJacket").value = r.jacket_max_temp;
+  $("#pulloverVal").textContent = `${fmtNum(r.pullover_max_temp)} °C`;
+  $("#jacketVal").textContent = `${fmtNum(r.jacket_max_temp)} °C`;
+  $("#ruleRainBar").innerHTML = levelBar("rain", r.jacket_rain_level, 6, RL(), null, {
+    labels: true, select: true, title: "Niederschlag",
+    rightText: `ab „${levelName(RL(), r.jacket_rain_level)}“`,
+  });
+}
+
+function saveRules(msg) {
+  clearTimeout(rulesTimer);
+  rulesTimer = setTimeout(async () => {
+    try {
+      const res = await postJSON("/api/settings/rules", S.rules);
+      S.rules = res.rules;
+      renderRules();
+      if (msg) toast(msg);
+    } catch (e) { toast(e.message, true); }
+  }, 350);
+}
+
+for (const [id, key] of [["rulePullover", "pullover_max_temp"], ["ruleJacket", "jacket_max_temp"]]) {
+  $("#" + id).addEventListener("input", e => {
+    S.rules[key] = +e.target.value;
+    $(key === "pullover_max_temp" ? "#pulloverVal" : "#jacketVal").textContent = `${e.target.value} °C`;
+  });
+  $("#" + id).addEventListener("change", () => saveRules("Regel gespeichert"));
+}
+$("#ruleRainBar").addEventListener("click", e => {
+  const seg = e.target.closest("[data-level]");
+  if (!seg) return;
+  S.rules.jacket_rain_level = +seg.dataset.level;
+  renderRules();
+  saveRules("Regel gespeichert");
+});
 
 /* ================= Standort ================= */
 function renderLocation() {
@@ -146,10 +196,6 @@ $("#colorSwatches").addEventListener("click", e => {
 });
 
 function setupSliders() {
-  const [tmin, tmax] = S.meta.temp_scale;
-  const [rmin, rmax] = S.meta.rain_scale;
-  for (const id of ["tempMin", "tempMax"]) Object.assign($("#" + id), { min: tmin, max: tmax });
-  for (const id of ["rainMin", "rainMax"]) Object.assign($("#" + id), { min: rmin, max: rmax });
   const link = (a, b, isMin) => $("#" + a).addEventListener("input", () => {
     const A = $("#" + a), B = $("#" + b);
     if (isMin && +A.value > +B.value) B.value = A.value;
@@ -158,16 +204,30 @@ function setupSliders() {
   });
   link("tempMin", "tempMax", true); link("tempMax", "tempMin", false);
   link("rainMin", "rainMax", true); link("rainMax", "rainMin", false);
+  $("#levelHint").textContent = RL().map(lv => levelTitle("rain", lv)).join(" · ");
 }
 
 function updatePreviews() {
-  const tlo = +$("#tempMin").value, thi = +$("#tempMax").value;
-  const rlo = +$("#rainMin").value, rhi = +$("#rainMax").value;
-  $("#tempPreview").innerHTML = rangeBar("temp", tlo, thi, S.meta.temp_scale);
-  $("#rainPreview").innerHTML = rangeBar("rain", rlo, rhi, S.meta.rain_scale);
-  $("#tempLabel").textContent = `${tlo} bis ${thi} °C`;
-  $("#rainLabel").textContent = `${fmtNum(rlo, rlo % 1 ? 1 : 0)} bis ${fmtNum(rhi, rhi % 1 ? 1 : 0)} mm`;
+  $("#tempPreview").innerHTML = levelBar("temp", +$("#tempMin").value, +$("#tempMax").value, TL(), null, { labels: true });
+  $("#rainPreview").innerHTML = levelBar("rain", +$("#rainMin").value, +$("#rainMax").value, RL(), null, { labels: true });
 }
+
+/* ================= Untertyp (Oberteil) ================= */
+function renderSubtypes() {
+  const subs = subsOf($("#itemType").value);
+  $("#subtypeField").classList.toggle("hidden", !subs.length);
+  if (subs.length && !subs.some(x => x.id === S.subtype)) S.subtype = subs[0].id;
+  if (!subs.length) S.subtype = null;
+  $("#subtypeChips").innerHTML = subs.map(x =>
+    `<span class="chip ${x.id === S.subtype ? "on" : ""}" data-sub="${x.id}">${esc(x.name)}</span>`).join("");
+}
+$("#itemType").addEventListener("change", renderSubtypes);
+$("#subtypeChips").addEventListener("click", e => {
+  const chip = e.target.closest("[data-sub]");
+  if (!chip) return;
+  S.subtype = chip.dataset.sub;
+  renderSubtypes();
+});
 
 /* Bild im Browser verkleinern → spart Speicher auf dem Router */
 function resizeImage(file, maxSide = 900, quality = 0.82) {
@@ -205,10 +265,11 @@ function resetForm() {
   S.color = null;
   S.selActs = new Set();
   S.photoBlob = null;
+  S.subtype = null;
   $("#itemForm").reset();
   $("#itemId").value = "";
-  $("#tempMin").value = 10; $("#tempMax").value = 25;
-  $("#rainMin").value = 0; $("#rainMax").value = 3;
+  $("#tempMin").value = 3; $("#tempMax").value = 5;
+  $("#rainMin").value = 1; $("#rainMax").value = 3;
   $("#photoPreview").classList.add("hidden");
   $("#photoPreview").removeAttribute("src");
   $("#photoHint").classList.remove("hidden");
@@ -218,6 +279,7 @@ function resetForm() {
   $("#formErrors").textContent = "";
   renderSwatches();
   renderActivityChips();
+  renderSubtypes();
   updatePreviews();
 }
 $("#btnCancelEdit").addEventListener("click", resetForm);
@@ -232,8 +294,10 @@ function editItem(id) {
   $("#itemId").value = id;
   $("#itemName").value = it.name;
   $("#itemType").value = it.type;
-  $("#tempMin").value = it.temp_min; $("#tempMax").value = it.temp_max;
-  $("#rainMin").value = it.rain_min; $("#rainMax").value = it.rain_max;
+  S.subtype = it.subtype || null;
+  renderSubtypes();
+  $("#tempMin").value = it.temp_level_min; $("#tempMax").value = it.temp_level_max;
+  $("#rainMin").value = it.rain_level_min; $("#rainMax").value = it.rain_level_max;
   $("#photoPreview").src = "/bilder/" + encodeURIComponent(it.image);
   $("#photoPreview").classList.remove("hidden");
   $("#photoHint").classList.add("hidden");
@@ -257,9 +321,10 @@ $("#itemForm").addEventListener("submit", async e => {
   const fd = new FormData();
   fd.append("name", $("#itemName").value.trim());
   fd.append("type", $("#itemType").value);
+  if (S.subtype) fd.append("subtype", S.subtype);
   fd.append("color", S.color);
   S.selActs.forEach(a => fd.append("activities", a));
-  for (const k of ["temp_min", "temp_max", "rain_min", "rain_max"]) fd.append(k, $(`[name=${k}]`).value);
+  for (const k of ["temp_level_min", "temp_level_max", "rain_level_min", "rain_level_max"]) fd.append(k, $(`[name=${k}]`).value);
   if (S.photoBlob) fd.append("image", S.photoBlob, "foto.jpg");
 
   const btn = $("#btnSave");
@@ -281,8 +346,9 @@ $("#itemForm").addEventListener("submit", async e => {
 function renderItemList() {
   $("#itemCount").textContent = S.clothes.length;
   const order = S.meta.types.map(t => t.id);
+  const subOrder = it => subsOf(it.type).findIndex(x => x.id === it.subtype);
   const list = [...S.clothes].sort((a, b) =>
-    order.indexOf(a.type) - order.indexOf(b.type) || a.name.localeCompare(b.name, "de"));
+    order.indexOf(a.type) - order.indexOf(b.type) || subOrder(a) - subOrder(b) || a.name.localeCompare(b.name, "de"));
   $("#itemList").innerHTML = list.map(it => {
     const col = colorById(it.color);
     const acts = (it.activities || []).map(a => {
@@ -293,9 +359,9 @@ function renderItemList() {
       <img src="/bilder/${encodeURIComponent(it.image)}" alt="" loading="lazy">
       <div style="min-width:0">
         <div class="title">${esc(it.name)}</div>
-        <div class="sub"><span class="swatch-dot" style="background:${colorBg(col)}"></span>${esc(typeName(it.type))} ${acts}</div>
-        ${rangeBar("temp", it.temp_min, it.temp_max, S.meta.temp_scale)}
-        ${rangeBar("rain", it.rain_min, it.rain_max, S.meta.rain_scale)}
+        <div class="sub"><span class="swatch-dot" style="background:${colorBg(col)}"></span>${esc(itemTypeName(it))} ${acts}</div>
+        ${levelBar("temp", it.temp_level_min, it.temp_level_max, TL())}
+        ${levelBar("rain", it.rain_level_min, it.rain_level_max, RL())}
       </div>
       <div class="actions">
         <button class="btn btn-sm" data-edit="${it.id}">Bearbeiten</button>
@@ -378,6 +444,8 @@ $("#btnShutdown").addEventListener("click", async () => {
   } catch (e) { toast("Server nicht erreichbar: " + e.message, true); return; }
   S.activities = S.meta.activities.map(a => ({ ...a }));
   $("#itemType").innerHTML = S.meta.types.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("");
+  S.rules = { ...S.meta.rules };
+  renderRules();
   $("#shutdownBox").classList.toggle("hidden", !S.meta.can_shutdown);
   renderLocation();
   renderActivities();

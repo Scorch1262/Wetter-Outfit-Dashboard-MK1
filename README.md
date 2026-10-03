@@ -7,7 +7,7 @@ iPhone und gedacht für den Dauerbetrieb auf einem **GL.iNet Slate 7** (OpenWrt)
 Zusätzlich gibt es eine **Windows-EXE** und eine **macOS-App**, die per GitHub
 Actions automatisch gebaut und als Release veröffentlicht werden.
 
-Aktuelle Version: **v1.4.0**
+Aktuelle Version: **v1.5.0**
 
 > **Alles in einem Ordner:** `/root/Outfit-Dashboard` (auf dem Router
 > `root@GL-BE3600:~# Outfit-Dashboard`). Die Nutzerdaten liegen darin im
@@ -23,23 +23,29 @@ Aktuelle Version: **v1.4.0**
 - **Wetterkarte**: aktuelle Außentemperatur, gefühlte Temperatur, Tageshöchst- und
   Tiefstwert, erwartete Niederschlagsmenge (mm) und -wahrscheinlichkeit
 - **Reiter „Outfit“**
-  - Zusammenstellung aus **Oberteil, Hose, Unterwäsche** und einer
-    **Schuh-Empfehlung**, Bilder untereinander
+  - Zusammenstellung aus **Oberteil** (T-Shirt, bei Bedarf Pullover und Jacke),
+    **Hose, Unterwäsche** und einer **Schuh-Empfehlung**, Bilder untereinander
+  - Zeile darüber erklärt, warum heute Pullover/Jacke vorgeschlagen werden
   - wird bei **jedem Neuladen** neu gewürfelt (zusätzlich Knopf „Neu“)
   - **Aktivitäten-Leiste** an der Seite: Oberteil und Hose werden nur aus Stücken
     mit dem passenden Aktivitäts-Label gewählt („Alle“ = ohne Filter)
   - Auswahl nach **Farbharmonie** und **Wetterpassung** (Temperatur + Niederschlag),
     Bewertung als Prozent-Badges
 - **Reiter „Kleiderschrank“**: alle Stücke mit Bild, Temperatur- und
-  Niederschlags-Balkendiagramm (inkl. Markierung des heutigen Werts) und den
-  Aktivitäts-Labels darunter; Filter nach Typ
+  Niederschlags-Balken (je 6 Stufen, heutige Stufe markiert) und den
+  Aktivitäts-Labels darunter; Filter nach Typ bzw. T-Shirt/Pullover/Jacke
 
 ### Einstellungen (`/einstellungen`)
 - **Standort** per Ortssuche oder manuellen Koordinaten
 - **Aktivitäten** anlegen, umbenennen, löschen
+- **Regeln für Oberteile**:
+  - Grenztemperatur, ab der **kein Pullover** mehr vorgeschlagen wird
+  - Grenztemperatur, ab der **keine Jacke** mehr vorgeschlagen wird –
+    außer die Niederschlagsvorhersage erreicht die per Balken gewählte Stufe
 - **Kleidungsstücke** anlegen/bearbeiten/löschen:
-  Foto (Kamera oder Mediathek), Name, Typ, Farbe, Aktivitäten,
-  Temperatur- und Niederschlagsbereich mit Live-Balkendiagramm
+  Foto (Kamera oder Mediathek), Name, Typ (bei Oberteil zusätzlich
+  **T-Shirt, Pullover oder Jacke**), Farbe, Aktivitäten,
+  Temperatur- und Niederschlagsbereich in **je 6 Stufen**
 
 - **Datenspeicher & Sicherung**: Speicherort und -belegung anzeigen,
   komplette Sicherung als ZIP herunterladen und wieder einspielen
@@ -51,27 +57,54 @@ Hinweise zu Betrieb, Datenspeicherung, Wetterdaten-Lizenz und Haftung.
 
 ## Wie die Zusammenstellung funktioniert
 
+### 6 Stufen für Temperatur und Niederschlag
+
+| Stufe | Temperatur        | Niederschlag (pro Tag) |
+|-------|-------------------|------------------------|
+| 1     | Frost – unter 0 °C | Trocken – unter 0,2 mm |
+| 2     | Kalt – 0–8 °C      | Vereinzelt – 0,2–1 mm  |
+| 3     | Kühl – 8–14 °C     | Leicht – 1–3 mm        |
+| 4     | Mild – 14–19 °C    | Mäßig – 3–8 mm         |
+| 5     | Warm – 19–25 °C    | Stark – 8–15 mm        |
+| 6     | Heiß – ab 25 °C    | Unwetter – ab 15 mm    |
+
+Jedes Kleidungsstück bekommt einen Stufenbereich „von – bis“.
+
+### Ablauf
+
 1. **Zielwerte des Tages**
    Temperatur = Tiefstwert + 65 % der Spanne bis zum Höchstwert
    (tagsüber zählt mehr), Niederschlag = erwartete Tagessumme in mm.
-2. **Wetterpassung je Stück**: liegt der Zielwert im eingestellten Bereich → 100 %.
-   Außerhalb fällt der Wert linear ab (Temperatur: 0 % bei 10 °C Abstand,
-   Niederschlag: 0 % bei 6 mm Abstand).
-3. **Farbharmonie** zwischen Oberteil, Hose und Schuhen:
+   Beide werden in ihre Stufe umgerechnet.
+2. **Schichten für das Oberteil** (Einstellungen → Regeln für Oberteile):
+   - **T-Shirt** – immer (gibt es keins, ersatzweise ein Pullover)
+   - **Pullover** – nur wenn die Tagestemperatur **unter** der Pullover-Grenze liegt
+   - **Jacke** – wenn die Tagestemperatur **unter** der Jacken-Grenze liegt
+     **oder** der Niederschlag die eingestellte Stufe **erreicht**
+3. **Wetterpassung je Stück**: Zielstufe im Bereich → 100 %,
+   1 Stufe daneben → 55 %, 2 Stufen → 20 %, weiter weg → 0 %.
+4. **Farbharmonie** zwischen allen sichtbaren Teilen (Jacke, Pullover,
+   T-Shirt, Hose, Schuhe):
    - Neutrale Farben (Schwarz, Grau, Weiß, Beige, Braun, Marine, Jeansblau …)
      passen zu fast allem
    - zwei Farbtöne: analog oder komplementär = gut, „unruhige“ Abstände = schlecht
    - gedeckte Farben (Oliv, Bordeaux, Rosa, Hellblau) sind nachsichtiger
    - „Bunt / Muster“ passt zu Neutralem, aber nicht zu weiterem Muster
-4. **Oberteil + Hose** werden als Paar bewertet
-   (40 % Temperatur, 20 % Niederschlag, 40 % Farbe).
-   **Schuhe** passen sich farblich an das Paar an und bekommen einen kleinen
-   Bonus, wenn sie zur Aktivität passen. **Unterwäsche** richtet sich nach der
-   Temperatur.
-5. Aus den Kandidaten wird **gewichtet zufällig** gezogen: gute Kombinationen sind
+5. **T-Shirt + Hose** werden als Paar bewertet (40 % Temperatur,
+   20 % Niederschlag, 40 % Farbe), Pullover und Jacke passen sich farblich an,
+   **Schuhe** an das Gesamtbild (plus Bonus bei passender Aktivität),
+   **Unterwäsche** an die Temperatur.
+6. Aus den Kandidaten wird **gewichtet zufällig** gezogen: gute Kombinationen sind
    deutlich wahrscheinlicher, aber es gibt Abwechslung.
 
-Ohne Wetterdaten (kein Standort / offline) zählen nur Farbe und Aktivität.
+Der Aktivitätsfilter gilt für alle Oberteile (T-Shirt, Pullover, Jacke) und Hosen.
+Ohne Wetterdaten (kein Standort / offline) werden weder Pullover noch Jacke
+vorgeschlagen; es zählen nur Farbe und Aktivität.
+
+**Übernahme alter Daten:** Stücke vom früheren Typ „Jacke“ werden zu
+Oberteil · Jacke, alle übrigen Oberteile zu Oberteil · T-Shirt – bitte
+Pullover in den Einstellungen umstellen. Frühere °C-/mm-Bereiche werden in die
+passenden Stufen umgerechnet.
 
 ---
 
@@ -362,6 +395,7 @@ Ein abweichender Pfad kann über die Umgebungsvariable `OUTFIT_CONFIG` gesetzt w
 | GET     | `/api/settings`               | Einstellungen                           |
 | POST    | `/api/settings/location`      | Standort `{name, lat, lon}`             |
 | POST    | `/api/settings/activities`    | Aktivitätenliste `{activities:[…]}`     |
+| POST    | `/api/settings/rules`         | Regeln `{pullover_max_temp, jacket_max_temp, jacket_rain_level}` |
 | GET     | `/api/geocode?q=<ort>`        | Ortssuche                               |
 | GET     | `/api/storage`                | Speicherort und -belegung               |
 | GET     | `/api/backup`                 | Sicherung als ZIP herunterladen         |

@@ -39,6 +39,32 @@
   </div>
 </section>
 
+<!-- Regeln für Oberteile ------------------------------------------------->
+<section class="card">
+  <div class="card-head">
+    <h3>Regeln für Oberteile</h3>
+    <span class="dim small">Gelten für die automatische Zusammenstellung</span>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Kein Pullover ab <b class="rule-val" id="pulloverVal"></b></span>
+    <input type="range" id="rulePullover" min="-10" max="30" step="1">
+    <p class="hint">Liegt die Tagestemperatur bei oder über diesem Wert, wird kein Pullover vorgeschlagen.</p>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Keine Jacke ab <b class="rule-val" id="jacketVal"></b></span>
+    <input type="range" id="ruleJacket" min="-10" max="30" step="1">
+  </div>
+
+  <div class="field">
+    <span class="field-label">… außer bei Niederschlag ab</span>
+    <div id="ruleRainBar"></div>
+    <p class="hint">Erreicht die Niederschlagsvorhersage diese Stufe, wird trotzdem eine Jacke vorgeschlagen.
+    Stufe antippen zum Einstellen.</p>
+  </div>
+</section>
+
 <!-- Kleidungsstück anlegen / bearbeiten ----------------------------------->
 <section class="card" id="itemCard">
   <div class="card-head">
@@ -64,6 +90,10 @@
       <div class="fields-col">
         <label>Name<input type="text" name="name" id="itemName" maxlength="80" placeholder="z. B. Graues Kapuzenshirt" required></label>
         <label>Typ<select name="type" id="itemType"></select></label>
+        <div class="field hidden" id="subtypeField">
+          <span class="field-label">Art des Oberteils</span>
+          <div class="subtype-row" id="subtypeChips"></div>
+        </div>
 
         <div class="field">
           <span class="field-label">Farbe <span class="dim" id="colorName"></span></span>
@@ -78,22 +108,22 @@
     </div>
 
     <div class="field">
-      <span class="field-label">Temperaturbereich <b id="tempLabel"></b></span>
+      <span class="field-label">Geeignet für Temperatur</span>
       <div class="bar-preview" id="tempPreview"></div>
       <div class="grid-2 sliders">
-        <label>von<input type="range" name="temp_min" id="tempMin" step="1"></label>
-        <label>bis<input type="range" name="temp_max" id="tempMax" step="1"></label>
+        <label>von<input type="range" name="temp_level_min" id="tempMin" min="1" max="6" step="1"></label>
+        <label>bis<input type="range" name="temp_level_max" id="tempMax" min="1" max="6" step="1"></label>
       </div>
     </div>
 
     <div class="field">
-      <span class="field-label">Niederschlag pro Tag <b id="rainLabel"></b></span>
+      <span class="field-label">Geeignet für Niederschlag</span>
       <div class="bar-preview" id="rainPreview"></div>
       <div class="grid-2 sliders">
-        <label>von<input type="range" name="rain_min" id="rainMin" step="0.5"></label>
-        <label>bis<input type="range" name="rain_max" id="rainMax" step="0.5"></label>
+        <label>von<input type="range" name="rain_level_min" id="rainMin" min="1" max="6" step="1"></label>
+        <label>bis<input type="range" name="rain_level_max" id="rainMax" min="1" max="6" step="1"></label>
       </div>
-      <p class="hint">0 mm = trocken · 1–5 mm = leichter Regen · 5–15 mm = Regen · über 15 mm = starker Regen</p>
+      <p class="hint" id="levelHint"></p>
     </div>
 
     <div class="form-errors" id="formErrors"></div>
