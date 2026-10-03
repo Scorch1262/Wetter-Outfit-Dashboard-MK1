@@ -1,0 +1,13 @@
+# Laufzeitdaten (Kleidungsstücke, Fotos, Einstellungen)
+data/
+config.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# System
+.DS_Store
+Thumbs.db

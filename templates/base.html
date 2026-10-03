@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14171c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Outfit">
+  <meta name="format-detection" content="telephone=no">
+  <title>{% block title %}Outfit-Dashboard{% endblock %} · {{ app_name }}</title>
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ version }}">
+</head>
+<body class="page-{{ page }}">
+  <div class="lattice-bg"></div>
+
+  <header class="topbar">
+    <a class="topbar-left" href="/">
+      <span class="logo-dot"></span>
+      <h1>Outfit-Dashboard <span>MK1</span></h1>
+    </a>
+    <nav class="topnav">
+      <a href="/" class="{{ 'active' if page == 'user' }}">Nutzer</a>
+      <a href="/einstellungen" class="{{ 'active' if page == 'settings' }}">Einstellungen</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <span class="badge badge-version">v{{ version }}</span>
+    <a href="/nutzungsbedingungen">Nutzungsbedingungen</a>
+    <span class="dim">Wetter: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (CC BY 4.0)</span>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="{{ url_for('static', filename='common.js') }}?v={{ version }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

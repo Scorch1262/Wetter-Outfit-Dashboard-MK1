@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Nutzungsbedingungen{% endblock %}
+{% block content %}
+
+<h2 class="page-title">Nutzungsbedingungen</h2>
+
+<section class="card prose">
+  <p class="dim small">Stand: Version {{ version }}</p>
+
+  <h3>1. Zweck</h3>
+  <p>Das Outfit-Dashboard ist ein privates Hilfsprogramm für den eigenen Haushalt. Es stellt aus selbst
+  angelegten Kleidungsstücken Vorschläge zusammen, die zum Tageswetter und zur gewählten Aktivität passen.
+  Die Vorschläge sind unverbindliche Empfehlungen – die Entscheidung, was angezogen wird, liegt immer bei dir.</p>
+
+  <h3>2. Betrieb im lokalen Netzwerk</h3>
+  <p>Die Webseite wird von einem Gerät im eigenen Netzwerk (z.&nbsp;B. einem GL.iNet-Router) bereitgestellt.
+  Es gibt keine Benutzerkonten und keinen Passwortschutz: Jede Person im selben Netzwerk kann die Seite
+  aufrufen, Einstellungen ändern sowie Kleidungsstücke anlegen und löschen. Das Dashboard ist nicht dafür
+  gedacht, direkt aus dem Internet erreichbar gemacht zu werden.</p>
+
+  <h3>3. Gespeicherte Daten</h3>
+  <p>Alle Angaben (Standort, Aktivitäten, Kleidungsstücke und Fotos) werden ausschließlich lokal im
+  Datenordner des Programms gespeichert. Es findet keine Übertragung an Dritte statt – mit Ausnahme der
+  Wetterabfrage (siehe Punkt 4). Zum Löschen aller Daten genügt es, den Datenordner zu entfernen.</p>
+
+  <h3>4. Wetterdaten</h3>
+  <p>Wettervorhersage und Ortssuche stammen von <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a>
+  und stehen unter der Lizenz <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>.
+  Für die Abfrage werden die Koordinaten des eingestellten Standorts an Open-Meteo übermittelt.
+  Vorhersagen können ungenau sein oder zeitweise nicht verfügbar sein; eine Gewähr für Richtigkeit und
+  Verfügbarkeit besteht nicht.</p>
+
+  <h3>5. Hochgeladene Bilder</h3>
+  <p>Lade nur Fotos hoch, an denen du die Rechte hast, und achte darauf, dass keine Personen erkennbar sind,
+  die nicht eingewilligt haben. Bilder werden vor dem Hochladen im Browser verkleinert, um Speicherplatz auf
+  dem Router zu sparen.</p>
+
+  <h3>6. Haftung</h3>
+  <p>Die Software wird ohne Gewährleistung bereitgestellt, wie sie ist. Für Datenverlust, falsche
+  Empfehlungen oder Folgen witterungsunpassender Kleidung wird keine Haftung übernommen. Lege von Zeit zu
+  Zeit eine Sicherung des Datenordners an.</p>
+
+  <h3>7. Änderungen</h3>
+  <p>Mit neuen Programmversionen können sich diese Bedingungen ändern. Die gültige Fassung ist immer auf
+  dieser Seite zu finden.</p>
+</section>
+
+{% endblock %}

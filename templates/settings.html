@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen{% endblock %}
+{% block content %}
+
+<h2 class="page-title">Einstellungen</h2>
+
+<!-- Standort -------------------------------------------------------------->
+<section class="card">
+  <div class="card-head">
+    <h3>Standort für die Wettervorhersage</h3>
+    <span class="badge" id="locBadge">–</span>
+  </div>
+  <div class="row-input">
+    <input type="search" id="locQuery" placeholder="Ort suchen, z. B. Hamburg" autocomplete="off" enterkeyhint="search">
+    <button class="btn" id="btnLocSearch">Suchen</button>
+  </div>
+  <ul class="result-list" id="locResults"></ul>
+  <details class="manual">
+    <summary>Koordinaten manuell eingeben</summary>
+    <div class="grid-2">
+      <label>Breitengrad<input type="number" id="locLat" step="0.0001" inputmode="decimal" placeholder="53.5511"></label>
+      <label>Längengrad<input type="number" id="locLon" step="0.0001" inputmode="decimal" placeholder="9.9937"></label>
+    </div>
+    <label>Bezeichnung<input type="text" id="locName" placeholder="z. B. Zuhause"></label>
+    <button class="btn" id="btnLocManual">Koordinaten übernehmen</button>
+  </details>
+</section>
+
+<!-- Aktivitäten ----------------------------------------------------------->
+<section class="card">
+  <div class="card-head">
+    <h3>Aktivitäten</h3>
+    <span class="dim small">Werden als Label an Kleidungsstücke vergeben</span>
+  </div>
+  <ul class="activity-edit" id="activityList"></ul>
+  <div class="row-input">
+    <input type="text" id="newActivity" placeholder="Neue Aktivität, z. B. Radfahren" maxlength="40" enterkeyhint="done">
+    <button class="btn" id="btnAddActivity">Hinzufügen</button>
+  </div>
+</section>
+
+<!-- Kleidungsstück anlegen / bearbeiten ----------------------------------->
+<section class="card" id="itemCard">
+  <div class="card-head">
+    <h3 id="itemFormTitle">Kleidungsstück anlegen</h3>
+    <button class="btn btn-ghost hidden" id="btnCancelEdit" type="button">Abbrechen</button>
+  </div>
+
+  <form id="itemForm" autocomplete="off">
+    <input type="hidden" name="id" id="itemId">
+
+    <div class="item-form-grid">
+      <div class="photo-col">
+        <label class="photo-drop" id="photoDrop">
+          <img id="photoPreview" alt="" class="hidden">
+          <span class="photo-hint" id="photoHint">
+            <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M4 7h3l2-3h6l2 3h3v13H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg>
+            Foto aufnehmen oder wählen
+          </span>
+          <input type="file" id="photoInput" accept="image/*">
+        </label>
+      </div>
+
+      <div class="fields-col">
+        <label>Name<input type="text" name="name" id="itemName" maxlength="80" placeholder="z. B. Graues Kapuzenshirt" required></label>
+        <label>Typ<select name="type" id="itemType"></select></label>
+
+        <div class="field">
+          <span class="field-label">Farbe <span class="dim" id="colorName"></span></span>
+          <div class="swatches" id="colorSwatches"></div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Aktivitäten</span>
+          <div class="chips" id="activityChips"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Temperaturbereich <b id="tempLabel"></b></span>
+      <div class="bar-preview" id="tempPreview"></div>
+      <div class="grid-2 sliders">
+        <label>von<input type="range" name="temp_min" id="tempMin" step="1"></label>
+        <label>bis<input type="range" name="temp_max" id="tempMax" step="1"></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Niederschlag pro Tag <b id="rainLabel"></b></span>
+      <div class="bar-preview" id="rainPreview"></div>
+      <div class="grid-2 sliders">
+        <label>von<input type="range" name="rain_min" id="rainMin" step="0.5"></label>
+        <label>bis<input type="range" name="rain_max" id="rainMax" step="0.5"></label>
+      </div>
+      <p class="hint">0 mm = trocken · 1–5 mm = leichter Regen · 5–15 mm = Regen · über 15 mm = starker Regen</p>
+    </div>
+
+    <div class="form-errors" id="formErrors"></div>
+    <button class="btn btn-primary btn-block" type="submit" id="btnSave">Speichern</button>
+  </form>
+</section>
+
+<!-- Vorhandene Stücke ----------------------------------------------------->
+<section class="card">
+  <div class="card-head">
+    <h3>Angelegte Kleidungsstücke</h3>
+    <span class="badge" id="itemCount">0</span>
+  </div>
+  <div class="item-list" id="itemList"></div>
+</section>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='settings.js') }}?v={{ version }}"></script>
+{% endblock %}

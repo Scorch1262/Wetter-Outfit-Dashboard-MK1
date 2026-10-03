@@ -1,0 +1,8 @@
+{
+  "host": "0.0.0.0",
+  "port": 8095,
+  "data_dir": "data",
+  "max_upload_mb": 12,
+  "weather_cache_minutes": 15,
+  "weather_verify_ssl": true
+}

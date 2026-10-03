@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Heute{% endblock %}
+{% block content %}
+
+<section class="card weather-card" id="weather">
+  <div class="weather-loading dim">Wetter wird geladen …</div>
+</section>
+
+<div class="tabs" role="tablist">
+  <button class="tab active" data-tab="outfit" role="tab">Outfit</button>
+  <button class="tab" data-tab="schrank" role="tab">Kleiderschrank</button>
+</div>
+
+<section class="tab-panel" id="panel-outfit">
+  <div class="outfit-layout">
+    <aside class="activity-rail" id="activityRail" aria-label="Aktivität wählen"></aside>
+    <div class="outfit-main">
+      <div class="outfit-head">
+        <div class="outfit-scores" id="outfitScores"></div>
+        <button class="btn btn-ghost" id="btnShuffle" title="Neu zusammenstellen">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
+          Neu
+        </button>
+      </div>
+      <div class="outfit-stack" id="outfitStack">
+        <div class="dim center pad">Zusammenstellung wird berechnet …</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="tab-panel hidden" id="panel-schrank">
+  <div class="filter-row" id="typeFilter"></div>
+  <div class="wardrobe-grid" id="wardrobeGrid">
+    <div class="dim center pad">Kleiderschrank wird geladen …</div>
+  </div>
+</section>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='user.js') }}?v={{ version }}"></script>
+{% endblock %}
