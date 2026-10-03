@@ -110,6 +110,24 @@
   <div class="item-list" id="itemList"></div>
 </section>
 
+<!-- Datenspeicher & Sicherung ------------------------------------------->
+<section class="card">
+  <div class="card-head">
+    <h3>Datenspeicher &amp; Sicherung</h3>
+    <span class="badge badge-ok">update-sicher</span>
+  </div>
+  <p class="hint">Aktivitäten, Standort, Kleidungsstücke, Fotos und Konfiguration liegen getrennt vom
+  Programm. Bei einem Update werden nur die Programmdateien ausgetauscht.</p>
+  <dl class="kv" id="storageInfo"><dt>Daten</dt><dd class="dim">…</dd></dl>
+  <div class="grid-2">
+    <a class="btn" href="/api/backup" download>Sicherung herunterladen</a>
+    <label class="btn file-btn">Sicherung einspielen
+      <input type="file" id="restoreInput" accept=".zip,application/zip">
+    </label>
+  </div>
+  <p class="hint">Beim Einspielen wird der bisherige Stand automatisch im Ordner <code>backups</code> gesichert.</p>
+</section>
+
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='settings.js') }}?v={{ version }}"></script>

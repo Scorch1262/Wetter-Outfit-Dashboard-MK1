@@ -3,6 +3,7 @@
   "port": 8095,
   "data_dir": "data",
   "max_upload_mb": 12,
+  "max_backup_mb": 300,
   "weather_cache_minutes": 15,
   "weather_verify_ssl": true
 }

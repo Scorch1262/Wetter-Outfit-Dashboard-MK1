@@ -323,7 +323,42 @@ $("#itemList").addEventListener("click", async e => {
 async function loadClothes() {
   S.clothes = await api("/api/clothes");
   renderItemList();
+  if (S.meta && $("#storageInfo")) loadStorage();
 }
+
+/* ================= Datenspeicher & Sicherung ================= */
+function fmtBytes(b) {
+  if (b == null) return "–";
+  const u = ["B", "KB", "MB", "GB"]; let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return `${fmtNum(b, i ? 1 : 0)} ${u[i]}`;
+}
+
+async function loadStorage() {
+  try {
+    const s = await api("/api/storage");
+    $("#storageInfo").innerHTML = `
+      <dt>Datenordner</dt><dd><code>${esc(s.home_dir)}</code></dd>
+      <dt>Programm</dt><dd><code>${esc(s.program_dir)}</code></dd>
+      <dt>Inhalt</dt><dd>${s.items} Kleidungsstücke · ${s.activities} Aktivitäten · ${fmtBytes(s.data_bytes)}</dd>
+      <dt>Frei</dt><dd>${fmtBytes(s.free_bytes)}</dd>`;
+  } catch (e) { $("#storageInfo").innerHTML = `<dt>Fehler</dt><dd>${esc(e.message)}</dd>`; }
+}
+
+$("#restoreInput").addEventListener("change", async e => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  if (!confirm(`Sicherung „${file.name}“ einspielen? Der aktuelle Stand wird dabei ersetzt (vorher automatisch gesichert).`)) return;
+  const fd = new FormData();
+  fd.append("backup", file);
+  toast("Sicherung wird eingespielt …");
+  try {
+    const r = await api("/api/backup", { method: "POST", body: fd });
+    toast(`Wiederhergestellt: ${r.items} Stücke, ${r.images} Fotos`);
+    setTimeout(() => location.reload(), 1200);
+  } catch (err) { toast(err.message, true); }
+});
 
 /* ================= Start ================= */
 (async function init() {

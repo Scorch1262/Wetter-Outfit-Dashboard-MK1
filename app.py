@@ -14,11 +14,14 @@ import logging
 import os
 import random
 import re
+import shutil
 import sys
+import tempfile
 import time
 import uuid
+import zipfile
 
-from flask import Flask, abort, jsonify, render_template, request, send_from_directory
+from flask import Flask, abort, jsonify, render_template, request, send_file, send_from_directory
 
 import outfit as ofit
 import weather as wx
@@ -26,18 +29,19 @@ from storage import JsonStore
 from version import APP_NAME, __version__
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.environ.get("OUTFIT_CONFIG", os.path.join(BASE_DIR, "config.json"))
 
 DEFAULT_CONFIG = {
     "host": "0.0.0.0",
     "port": 8095,
     "data_dir": "data",
     "max_upload_mb": 12,
+    "max_backup_mb": 300,
     "weather_cache_minutes": 15,
     "weather_verify_ssl": True,
 }
 
 DEFAULT_SETTINGS = {
+    "schema": 1,
     "location": {"name": "", "lat": None, "lon": None},
     "activities": [
         {"id": "alltag", "name": "Alltag"},
@@ -47,6 +51,7 @@ DEFAULT_SETTINGS = {
         {"id": "draussen", "name": "Draußen / Wandern"},
     ],
 }
+DEFAULT_CLOTHES = {"schema": 1, "items": []}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
                     stream=sys.stdout)
@@ -54,8 +59,85 @@ log = logging.getLogger("outfit")
 
 
 # ---------------------------------------------------------------------------
-# Konfiguration & Speicher
+# Persistentes Datenverzeichnis
+#
+# Programmdateien und Nutzerdaten liegen getrennt. Der Programmordner kann bei
+# einem Update komplett ausgetauscht werden, ohne dass Aktivitäten, Standort,
+# Kleidungsstücke, Fotos oder die Konfiguration verloren gehen.
+#
+#   OpenWrt / GL.iNet:  /srv/outfit-dashboard
+#   PC / Raspberry Pi:  ~/.outfit-dashboard
+#   frei wählbar über die Umgebungsvariable OUTFIT_HOME
+#
+# Inhalt:  config.json, data/settings.json, data/clothes.json, data/images/,
+#          backups/
 # ---------------------------------------------------------------------------
+
+def _inside(path, parent):
+    path, parent = os.path.realpath(path), os.path.realpath(parent)
+    return path == parent or path.startswith(parent + os.sep)
+
+
+def resolve_home():
+    env = os.environ.get("OUTFIT_HOME")
+    if env:
+        home = env
+    elif os.path.exists("/etc/openwrt_release"):
+        home = "/srv/outfit-dashboard"
+    else:
+        home = os.path.join(os.path.expanduser("~"), ".outfit-dashboard")
+    home = os.path.abspath(home)
+    if _inside(home, BASE_DIR):
+        log.warning("Datenverzeichnis %s liegt im Programmordner – bei Updates droht Datenverlust!", home)
+    try:
+        os.makedirs(home, exist_ok=True)
+    except OSError as exc:
+        log.error("Datenverzeichnis %s nicht anlegbar (%s) – nutze Programmordner", home, exc)
+        home = os.path.join(BASE_DIR, "userdata")
+        os.makedirs(home, exist_ok=True)
+    return home
+
+
+HOME_DIR = resolve_home()
+BACKUP_DIR = os.path.join(HOME_DIR, "backups")
+
+_env_cfg = os.environ.get("OUTFIT_CONFIG")
+if _env_cfg and not _inside(_env_cfg, BASE_DIR):
+    CONFIG_PATH = os.path.abspath(_env_cfg)
+else:
+    # eine Konfiguration im Programmordner (alte Installationen) wird übernommen
+    CONFIG_PATH = os.path.join(HOME_DIR, "config.json")
+
+
+def migrate_legacy():
+    """Übernimmt Daten aus v1.0.0, die noch im Programmordner lagen."""
+    legacy_cfg = _env_cfg if (_env_cfg and _inside(_env_cfg, BASE_DIR)) else os.path.join(BASE_DIR, "config.json")
+    legacy_data_dir = os.path.join(BASE_DIR, "data")
+
+    if os.path.exists(legacy_cfg) and not os.path.exists(CONFIG_PATH):
+        try:
+            with open(legacy_cfg, "r", encoding="utf-8") as fh:
+                old = json.load(fh)
+            dd = old.get("data_dir", "data")
+            if not os.path.isabs(dd):
+                legacy_data_dir = os.path.join(BASE_DIR, dd)
+                old["data_dir"] = "data"  # künftig relativ zum Datenverzeichnis
+            with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
+                json.dump(old, fh, indent=2)
+            log.info("Konfiguration übernommen: %s -> %s", legacy_cfg, CONFIG_PATH)
+        except (OSError, ValueError) as exc:
+            log.warning("Alte config.json nicht übernehmbar: %s", exc)
+
+    new_data = os.path.join(HOME_DIR, "data")
+    has_new = any(os.path.exists(os.path.join(new_data, f)) for f in ("clothes.json", "settings.json"))
+    has_old = any(os.path.exists(os.path.join(legacy_data_dir, f)) for f in ("clothes.json", "settings.json"))
+    if has_old and not has_new and not _inside(new_data, legacy_data_dir):
+        try:
+            shutil.copytree(legacy_data_dir, new_data, dirs_exist_ok=True)
+            log.info("Daten übernommen: %s -> %s (alter Ordner kann gelöscht werden)", legacy_data_dir, new_data)
+        except OSError as exc:
+            log.error("Datenübernahme fehlgeschlagen: %s", exc)
+
 
 def load_config():
     cfg = copy.deepcopy(DEFAULT_CONFIG)
@@ -75,18 +157,43 @@ def load_config():
     return cfg
 
 
+migrate_legacy()
 CONFIG = load_config()
 DATA_DIR = CONFIG["data_dir"]
 if not os.path.isabs(DATA_DIR):
-    DATA_DIR = os.path.join(BASE_DIR, DATA_DIR)
+    DATA_DIR = os.path.join(HOME_DIR, DATA_DIR)
 IMAGE_DIR = os.path.join(DATA_DIR, "images")
 os.makedirs(IMAGE_DIR, exist_ok=True)
 
 settings_store = JsonStore(os.path.join(DATA_DIR, "settings.json"), DEFAULT_SETTINGS)
-clothes_store = JsonStore(os.path.join(DATA_DIR, "clothes.json"), {"items": []})
+clothes_store = JsonStore(os.path.join(DATA_DIR, "clothes.json"), DEFAULT_CLOTHES)
+
+
+def normalize_item(item):
+    """Ergänzt fehlende Felder – ältere oder künftige Datenstände bleiben lesbar."""
+    item.setdefault("name", "Ohne Namen")
+    if item.get("type") not in ofit.TYPE_IDS:
+        item["type"] = "sonstiges"
+    if item.get("color") not in ofit.COLOR_BY_ID:
+        item["color"] = "grau"
+    if not isinstance(item.get("activities"), list):
+        item["activities"] = []
+    for key, default in (("temp_min", 5), ("temp_max", 25), ("rain_min", 0), ("rain_max", 5)):
+        try:
+            item[key] = float(item.get(key, default))
+        except (TypeError, ValueError):
+            item[key] = float(default)
+    item.setdefault("image", "")
+    item.setdefault("created", 0)
+    return item
+
+
+def load_items():
+    return [normalize_item(i) for i in clothes_store.load()["items"] if isinstance(i, dict) and i.get("id")]
+
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = int(CONFIG["max_upload_mb"]) * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = max(int(CONFIG["max_upload_mb"]), int(CONFIG["max_backup_mb"])) * 1024 * 1024
 app.config["JSON_AS_ASCII"] = False
 app.json.ensure_ascii = False
 
@@ -176,6 +283,8 @@ def save_upload(file_storage, item_id):
     data = file_storage.read()
     if not data:
         return None, None
+    if len(data) > int(CONFIG["max_upload_mb"]) * 1024 * 1024:
+        return None, f"Bild zu groß (max. {CONFIG['max_upload_mb']} MB)."
     kind = image_kind(data)
     if not kind:
         return None, "Bildformat nicht unterstützt (erlaubt: JPG, PNG, WEBP, GIF)."
@@ -250,7 +359,7 @@ def api_weather():
 @app.get("/api/outfit")
 def api_outfit():
     activity = request.args.get("activity") or "alle"
-    items = clothes_store.load()["items"]
+    items = load_items()
     w = current_weather()
     target = w.get("target") if w.get("ok") else None
     result = ofit.build_outfit(items, activity=activity, target=target, rng=random.SystemRandom())
@@ -260,7 +369,7 @@ def api_outfit():
 
 @app.get("/api/clothes")
 def api_clothes():
-    return jsonify(clothes_store.load()["items"])
+    return jsonify(load_items())
 
 
 @app.post("/api/clothes")
@@ -284,7 +393,7 @@ def api_clothes_create():
 
 @app.post("/api/clothes/<item_id>")
 def api_clothes_update(item_id):
-    items = clothes_store.load()["items"]
+    items = load_items()
     existing = next((i for i in items if i["id"] == item_id), None)
     if not existing:
         return jsonify({"ok": False, "errors": ["Kleidungsstück nicht gefunden."]}), 404
@@ -392,9 +501,131 @@ def api_geocode():
         return jsonify({"ok": False, "errors": [f"Ortssuche fehlgeschlagen: {exc}"]}), 502
 
 
+# ---------------------------------------------------------------------------
+# Datenspeicher, Sicherung und Wiederherstellung
+# ---------------------------------------------------------------------------
+
+IMAGE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}\.(jpg|png|webp|gif)$")
+
+
+def _dir_size(path):
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total
+
+
+def write_backup(target):
+    """Schreibt settings.json, clothes.json und alle Fotos als ZIP nach target."""
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_STORED) as zf:  # Fotos sind schon komprimiert
+        zf.writestr("backup.json", json.dumps({"app": APP_NAME, "version": __version__,
+                                               "created": int(time.time())}, indent=2))
+        zf.writestr("settings.json", json.dumps(settings_store.load(), indent=2, ensure_ascii=False))
+        zf.writestr("clothes.json", json.dumps(clothes_store.load(), indent=2, ensure_ascii=False))
+        for name in sorted(os.listdir(IMAGE_DIR)):
+            if IMAGE_NAME_RE.match(name):
+                zf.write(os.path.join(IMAGE_DIR, name), "images/" + name)
+
+
+def auto_backup(reason):
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    path = os.path.join(BACKUP_DIR, f"auto-{time.strftime('%Y%m%d-%H%M%S')}-{reason}.zip")
+    write_backup(path)
+    old = sorted(f for f in os.listdir(BACKUP_DIR) if f.startswith("auto-"))
+    for f in old[:-3]:  # nur die letzten 3 automatischen Sicherungen behalten
+        try:
+            os.remove(os.path.join(BACKUP_DIR, f))
+        except OSError:
+            pass
+    return path
+
+
+@app.get("/api/storage")
+def api_storage():
+    items = load_items()
+    try:
+        st = os.statvfs(DATA_DIR)
+        free = st.f_bavail * st.f_frsize
+    except (OSError, AttributeError):
+        free = None
+    return jsonify({
+        "home_dir": HOME_DIR,
+        "data_dir": DATA_DIR,
+        "config_path": CONFIG_PATH,
+        "program_dir": BASE_DIR,
+        "items": len(items),
+        "activities": len(settings_store.load()["activities"]),
+        "data_bytes": _dir_size(DATA_DIR),
+        "free_bytes": free,
+    })
+
+
+@app.get("/api/backup")
+def api_backup_download():
+    fh = tempfile.TemporaryFile()
+    write_backup(fh)
+    fh.seek(0)
+    name = f"outfit-sicherung-{time.strftime('%Y-%m-%d')}.zip"
+    return send_file(fh, mimetype="application/zip", as_attachment=True, download_name=name)
+
+
+@app.post("/api/backup")
+def api_backup_restore():
+    upload = request.files.get("backup")
+    if not upload:
+        return jsonify({"ok": False, "errors": ["Keine Datei übertragen."]}), 400
+    # auf den Datenträger statt in den RAM – wichtig auf dem Router
+    tmp = tempfile.NamedTemporaryFile(dir=HOME_DIR, prefix="restore-", suffix=".zip", delete=False)
+    tmp.close()
+    upload.save(tmp.name)
+    try:
+        return _restore_from(tmp.name)
+    finally:
+        try:
+            os.remove(tmp.name)
+        except OSError:
+            pass
+
+
+def _restore_from(path):
+    try:
+        zf = zipfile.ZipFile(path)
+        names = set(zf.namelist())
+        if "settings.json" not in names or "clothes.json" not in names:
+            raise ValueError("settings.json oder clothes.json fehlt")
+        settings = json.loads(zf.read("settings.json").decode("utf-8"))
+        clothes = json.loads(zf.read("clothes.json").decode("utf-8"))
+        if not isinstance(settings.get("activities"), list) or not isinstance(clothes.get("items"), list):
+            raise ValueError("ungültiger Aufbau")
+        images = [n for n in names if n.startswith("images/") and IMAGE_NAME_RE.match(n[7:])]
+    except (zipfile.BadZipFile, ValueError, UnicodeDecodeError, KeyError) as exc:
+        return jsonify({"ok": False, "errors": [f"Keine gültige Sicherung: {exc}"]}), 400
+
+    safety = auto_backup("vor-wiederherstellung")
+    for name in os.listdir(IMAGE_DIR):
+        if IMAGE_NAME_RE.match(name):
+            remove_image(name)
+    for n in images:
+        with open(os.path.join(IMAGE_DIR, n[7:]), "wb") as fh:
+            fh.write(zf.read(n))
+    for key, value in DEFAULT_SETTINGS.items():
+        settings.setdefault(key, copy.deepcopy(value))
+    settings_store.save(settings)
+    clothes.setdefault("schema", 1)
+    clothes_store.save(clothes)
+    zf.close()
+    log.info("Sicherung eingespielt (%d Stücke, %d Fotos), vorheriger Stand: %s",
+             len(clothes["items"]), len(images), safety)
+    return jsonify({"ok": True, "items": len(clothes["items"]), "images": len(images)})
+
+
 @app.errorhandler(413)
 def too_large(_err):
-    return jsonify({"ok": False, "errors": [f"Datei zu groß (max. {CONFIG['max_upload_mb']} MB)."]}), 413
+    return jsonify({"ok": False, "errors": [f"Datei zu groß (max. {CONFIG['max_backup_mb']} MB)."]}), 413
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +634,9 @@ def too_large(_err):
 
 def main():
     host, port = CONFIG["host"], int(CONFIG["port"])
-    log.info("%s v%s startet auf http://%s:%s (Daten: %s)", APP_NAME, __version__, host, port, DATA_DIR)
+    log.info("%s v%s startet auf http://%s:%s", APP_NAME, __version__, host, port)
+    log.info("Programm: %s", BASE_DIR)
+    log.info("Daten:    %s (Konfiguration: %s)", DATA_DIR, CONFIG_PATH)
     try:
         app.run(host=host, port=port, threaded=True, debug=False, use_reloader=False)
     except OSError as exc:
