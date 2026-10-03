@@ -33,7 +33,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG = {
     "host": "0.0.0.0",
     "port": 8095,
-    "data_dir": "data",
+    "data_dir": ".",
     "max_upload_mb": 12,
     "max_backup_mb": 300,
     "weather_cache_minutes": 15,
@@ -59,84 +59,87 @@ log = logging.getLogger("outfit")
 
 
 # ---------------------------------------------------------------------------
-# Persistentes Datenverzeichnis
+# Ordneraufbau – alles in EINEM Ordner (z. B. /root/Outfit-Dashboard)
 #
-# Programmdateien und Nutzerdaten liegen getrennt. Der Programmordner kann bei
-# einem Update komplett ausgetauscht werden, ohne dass Aktivitäten, Standort,
-# Kleidungsstücke, Fotos oder die Konfiguration verloren gehen.
+#   Outfit-Dashboard/
+#   ├── app.py, outfit.py, …, templates/, static/, openwrt/   Programm
+#   └── daten/                                                Nutzerdaten
+#       ├── config.json
+#       ├── settings.json      Standort, Aktivitäten
+#       ├── clothes.json       Kleidungsstücke mit Labels
+#       ├── images/            Fotos
+#       └── backups/           automatische Sicherungen
 #
-#   OpenWrt / GL.iNet:  /srv/outfit-dashboard
-#   PC / Raspberry Pi:  ~/.outfit-dashboard
-#   frei wählbar über die Umgebungsvariable OUTFIT_HOME
-#
-# Inhalt:  config.json, data/settings.json, data/clothes.json, data/images/,
-#          backups/
+# Bei einem Update werden nur die Programmdateien ersetzt, "daten/" bleibt
+# unverändert. Abweichender Datenordner: Umgebungsvariable OUTFIT_HOME.
 # ---------------------------------------------------------------------------
 
-def _inside(path, parent):
-    path, parent = os.path.realpath(path), os.path.realpath(parent)
-    return path == parent or path.startswith(parent + os.sep)
+DATA_FOLDER_NAME = "daten"
+LEGACY_HOMES = ["/srv/outfit-dashboard", os.path.join(os.path.expanduser("~"), ".outfit-dashboard")]
 
 
 def resolve_home():
-    env = os.environ.get("OUTFIT_HOME")
-    if env:
-        home = env
-    elif os.path.exists("/etc/openwrt_release"):
-        home = "/srv/outfit-dashboard"
-    else:
-        home = os.path.join(os.path.expanduser("~"), ".outfit-dashboard")
-    home = os.path.abspath(home)
-    if _inside(home, BASE_DIR):
-        log.warning("Datenverzeichnis %s liegt im Programmordner – bei Updates droht Datenverlust!", home)
+    home = os.path.abspath(os.environ.get("OUTFIT_HOME") or os.path.join(BASE_DIR, DATA_FOLDER_NAME))
     try:
         os.makedirs(home, exist_ok=True)
     except OSError as exc:
-        log.error("Datenverzeichnis %s nicht anlegbar (%s) – nutze Programmordner", home, exc)
-        home = os.path.join(BASE_DIR, "userdata")
-        os.makedirs(home, exist_ok=True)
+        log.error("Datenordner %s nicht anlegbar: %s", home, exc)
+        sys.exit(1)
     return home
 
 
 HOME_DIR = resolve_home()
 BACKUP_DIR = os.path.join(HOME_DIR, "backups")
+CONFIG_PATH = os.path.abspath(os.environ.get("OUTFIT_CONFIG") or os.path.join(HOME_DIR, "config.json"))
 
-_env_cfg = os.environ.get("OUTFIT_CONFIG")
-if _env_cfg and not _inside(_env_cfg, BASE_DIR):
-    CONFIG_PATH = os.path.abspath(_env_cfg)
-else:
-    # eine Konfiguration im Programmordner (alte Installationen) wird übernommen
-    CONFIG_PATH = os.path.join(HOME_DIR, "config.json")
+
+def _has_data(folder):
+    return any(os.path.isfile(os.path.join(folder, f)) for f in ("clothes.json", "settings.json"))
+
+
+def _legacy_sources():
+    """Mögliche Altbestände: (Konfigurationsdatei, Datenordner)."""
+    sources = []
+    # v1.1.0: eigenes Datenverzeichnis außerhalb des Programms
+    for home in LEGACY_HOMES:
+        if os.path.realpath(home) != os.path.realpath(HOME_DIR):
+            sources.append((os.path.join(home, "config.json"), home, "data"))
+    # v1.0.0: config.json und data/ direkt im Programmordner
+    sources.append((os.path.join(BASE_DIR, "config.json"), BASE_DIR, "data"))
+    return sources
 
 
 def migrate_legacy():
-    """Übernimmt Daten aus v1.0.0, die noch im Programmordner lagen."""
-    legacy_cfg = _env_cfg if (_env_cfg and _inside(_env_cfg, BASE_DIR)) else os.path.join(BASE_DIR, "config.json")
-    legacy_data_dir = os.path.join(BASE_DIR, "data")
-
-    if os.path.exists(legacy_cfg) and not os.path.exists(CONFIG_PATH):
+    """Übernimmt Daten früherer Versionen einmalig in den Ordner daten/."""
+    if _has_data(HOME_DIR):
+        return
+    for cfg_path, base, default_dd in _legacy_sources():
+        old_cfg = {}
+        if os.path.isfile(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as fh:
+                    old_cfg = json.load(fh)
+            except (OSError, ValueError):
+                old_cfg = {}
+        dd = old_cfg.get("data_dir", default_dd)
+        src = dd if os.path.isabs(dd) else os.path.join(base, dd)
+        if not _has_data(src) or os.path.realpath(src) == os.path.realpath(HOME_DIR):
+            continue
         try:
-            with open(legacy_cfg, "r", encoding="utf-8") as fh:
-                old = json.load(fh)
-            dd = old.get("data_dir", "data")
-            if not os.path.isabs(dd):
-                legacy_data_dir = os.path.join(BASE_DIR, dd)
-                old["data_dir"] = "data"  # künftig relativ zum Datenverzeichnis
-            with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
-                json.dump(old, fh, indent=2)
-            log.info("Konfiguration übernommen: %s -> %s", legacy_cfg, CONFIG_PATH)
-        except (OSError, ValueError) as exc:
-            log.warning("Alte config.json nicht übernehmbar: %s", exc)
-
-    new_data = os.path.join(HOME_DIR, "data")
-    has_new = any(os.path.exists(os.path.join(new_data, f)) for f in ("clothes.json", "settings.json"))
-    has_old = any(os.path.exists(os.path.join(legacy_data_dir, f)) for f in ("clothes.json", "settings.json"))
-    if has_old and not has_new and not _inside(new_data, legacy_data_dir):
-        try:
-            shutil.copytree(legacy_data_dir, new_data, dirs_exist_ok=True)
-            log.info("Daten übernommen: %s -> %s (alter Ordner kann gelöscht werden)", legacy_data_dir, new_data)
+            for name in ("settings.json", "clothes.json"):
+                if os.path.isfile(os.path.join(src, name)):
+                    shutil.copy2(os.path.join(src, name), os.path.join(HOME_DIR, name))
+            if os.path.isdir(os.path.join(src, "images")):
+                shutil.copytree(os.path.join(src, "images"), os.path.join(HOME_DIR, "images"),
+                                dirs_exist_ok=True)
+            if old_cfg and not os.path.exists(CONFIG_PATH):
+                old_cfg["data_dir"] = "."
+                with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
+                    json.dump(old_cfg, fh, indent=2)
+            log.info("Daten übernommen: %s -> %s (der alte Ordner kann gelöscht werden)", src, HOME_DIR)
+            return
         except OSError as exc:
-            log.error("Datenübernahme fehlgeschlagen: %s", exc)
+            log.error("Datenübernahme aus %s fehlgeschlagen: %s", src, exc)
 
 
 def load_config():
@@ -161,7 +164,7 @@ migrate_legacy()
 CONFIG = load_config()
 DATA_DIR = CONFIG["data_dir"]
 if not os.path.isabs(DATA_DIR):
-    DATA_DIR = os.path.join(HOME_DIR, DATA_DIR)
+    DATA_DIR = os.path.normpath(os.path.join(HOME_DIR, DATA_DIR))
 IMAGE_DIR = os.path.join(DATA_DIR, "images")
 os.makedirs(IMAGE_DIR, exist_ok=True)
 

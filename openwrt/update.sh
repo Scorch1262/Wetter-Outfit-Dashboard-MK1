@@ -1,5 +1,6 @@
 #!/bin/sh
-# Update des Outfit-Dashboards: tauscht nur die Programmdateien aus.
-# Aktivitäten, Standort, Kleidungsstücke, Fotos und Konfiguration in
-# /srv/outfit-dashboard bleiben unverändert (vorher wird automatisch gesichert).
+# Update des Outfit-Dashboards: ersetzt nur die Programmdateien in
+# /root/Outfit-Dashboard. Der Unterordner daten/ (Aktivitäten, Standort,
+# Kleidungsstücke, Labels, Fotos, Konfiguration) bleibt unverändert;
+# vorher werden die JSON-Daten automatisch gesichert.
 exec sh "$(dirname "$0")/install.sh" "$@"

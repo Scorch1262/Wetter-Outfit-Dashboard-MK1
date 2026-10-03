@@ -1,15 +1,17 @@
-# Outfit-Dashboard-MK1
+# Outfit-Dashboard (MK1)
 
 Lokales Web-Dashboard, das aus dem eigenen Kleiderschrank bei jedem Aufruf ein
 **farblich passendes Outfit zum heutigen Wetter** zusammenstellt.
 Gestaltet im dunklen Lattice-Design der übrigen Dashboards, optimiert für das
 iPhone und gedacht für den Dauerbetrieb auf einem **GL.iNet Slate 7** (OpenWrt).
 
-Aktuelle Version: **v1.1.0**
+Aktuelle Version: **v1.2.0**
 
-> **Update-sicher:** Programm und Nutzerdaten liegen in getrennten Ordnern.
-> Bei einem Update werden nur die Programmdateien ausgetauscht – Aktivitäten,
-> Standort, Kleidungsstücke, Fotos, Labels und Konfiguration bleiben erhalten.
+> **Alles in einem Ordner:** `/root/Outfit-Dashboard` (auf dem Router
+> `root@GL-BE3600:~# Outfit-Dashboard`). Die Nutzerdaten liegen darin im
+> Unterordner `daten/`. Bei einem Update werden nur die Programmdateien
+> ersetzt – Aktivitäten, Standort, Kleidungsstücke, Fotos, Labels und
+> Konfiguration bleiben erhalten.
 
 ---
 
@@ -71,66 +73,48 @@ Ohne Wetterdaten (kein Standort / offline) zählen nur Farbe und Aktivität.
 
 ---
 
-## Projektstruktur
+## Ordneraufbau
 
 ```
-outfit-dashboard-mk1/
+/root/Outfit-Dashboard/
 ├── app.py                  Flask-Server, Seiten und REST-API
 ├── outfit.py               Typen, Farbpalette, Bewertungs- und Auswahllogik
 ├── weather.py              Open-Meteo-Abfrage und Ortssuche (nur Standardbibliothek)
 ├── storage.py              threadsicherer JSON-Speicher mit atomarem Schreiben
 ├── version.py              Versionsnummer
 ├── requirements.txt        einzige Abhängigkeit: Flask
-├── config.example.json     Vorlage für config.json
-├── templates/
-│   ├── base.html
-│   ├── index.html          Nutzermodus
-│   ├── settings.html       Einstellungen
-│   └── terms.html          Nutzungsbedingungen
-├── static/
-│   ├── style.css           Lattice-Design, iPhone-optimiert
-│   ├── common.js           Hilfsfunktionen, Balkendiagramme, Wetter-Icons
-│   ├── user.js             Nutzermodus
-│   ├── settings.js         Einstellungen
-│   └── icon.svg
+├── config.example.json     Vorlage für daten/config.json
+├── templates/              base, index (Nutzer), settings, terms
+├── static/                 style.css, common.js, user.js, settings.js, icon.svg
 ├── openwrt/
-│   ├── install.sh          Installation und Update (GL.iNet Slate 7 / OpenWrt)
-│   ├── update.sh           Update – tauscht nur die Programmdateien aus
+│   ├── install.sh          Installation und Update (GL.iNet Slate 7)
+│   ├── update.sh           Update – ersetzt nur die Programmdateien
 │   └── outfit-dashboard.init  procd-Dienst (Autostart)
 ├── CHANGELOG.md
-└── README.md
+├── README.md
+└── daten/                  ← Nutzerdaten, entsteht beim ersten Start, NICHT im Repo
+    ├── config.json         Port, Upload-Grenzen, Wetter-Cache …
+    ├── settings.json       Standort und Aktivitäten
+    ├── clothes.json        Kleidungsstücke mit allen Labels
+    ├── images/             Fotos
+    └── backups/            automatische Sicherungen (vor Update / Wiederherstellung)
 ```
 
----
+| Teil                    | bei Update             |
+|-------------------------|------------------------|
+| Programmdateien         | werden ersetzt         |
+| `daten/`                | **bleibt unverändert** |
 
-## Datenablage – getrennt vom Programm
+Wichtig: Beim Update **nicht** den ganzen Ordner `/root/Outfit-Dashboard`
+löschen, sondern `update.sh` benutzen (oder neue Dateien darüberkopieren) –
+dann bleibt `daten/` erhalten.
 
-| Ordner                     | Inhalt                                   | bei Update |
-|----------------------------|------------------------------------------|------------|
-| `/opt/outfit-dashboard`    | Programmdateien                          | wird ersetzt |
-| `/srv/outfit-dashboard`    | Nutzerdaten (siehe unten)                | **bleibt erhalten** |
+Ein abweichender Datenordner lässt sich über die Umgebungsvariable
+`OUTFIT_HOME` setzen.
 
-```
-/srv/outfit-dashboard/
-├── config.json             Port, Upload-Grenzen, Wetter-Cache …
-├── data/
-│   ├── settings.json       Standort und Aktivitäten
-│   ├── clothes.json        Kleidungsstücke mit allen Labels
-│   └── images/             Fotos
-└── backups/                automatische Sicherungen (vor Update / Wiederherstellung)
-```
-
-Der Datenordner wird automatisch gewählt:
-
-| Umgebung              | Datenordner               |
-|-----------------------|---------------------------|
-| OpenWrt / GL.iNet     | `/srv/outfit-dashboard`   |
-| PC / Raspberry Pi     | `~/.outfit-dashboard`     |
-| frei wählbar          | Umgebungsvariable `OUTFIT_HOME` |
-
-**Übernahme aus v1.0.0:** Lagen `config.json` und `data/` noch im
-Programmordner, werden sie beim ersten Start von v1.1.0 (bzw. durch
-`install.sh`) automatisch in den Datenordner übernommen.
+**Übernahme älterer Versionen:** Daten aus v1.0.0 (`data/` im Programmordner)
+und v1.1.0 (`/srv/outfit-dashboard`, `~/.outfit-dashboard`) werden beim ersten
+Start bzw. durch `install.sh` automatisch nach `daten/` übernommen.
 
 **Datenformat:** Die Dateien tragen eine Schema-Nummer; fehlende Felder werden
 beim Laden ergänzt, damit ältere Datenstände auch mit neuen Programmversionen
@@ -145,7 +129,7 @@ pip install -r requirements.txt
 python3 app.py
 ```
 
-Daten landen dort in `~/.outfit-dashboard`.
+Daten landen im Unterordner `daten/` neben `app.py`.
 
 Aufruf: `http://<IP-des-Rechners>:8095`
 
@@ -159,11 +143,11 @@ Den freien Speicher zeigt `df -h /overlay`.
 
 ### Erstinstallation
 
-1. Projektordner vom PC auf den Router kopieren:
-   `scp -r outfit-dashboard-mk1 root@192.168.8.1:/tmp/`
+1. Ordner `Outfit-Dashboard` vom PC direkt ins Home-Verzeichnis des Routers kopieren:
+   `scp -r Outfit-Dashboard root@192.168.8.1:/root/`
    (bei neueren OpenSSH-Versionen ggf. `scp -O -r …`)
-2. Auf dem Router:
-   `cd /tmp/outfit-dashboard-mk1`
+2. Auf dem Router (`root@GL-BE3600:~#`):
+   `cd Outfit-Dashboard`
    `sh openwrt/install.sh`
 3. Aufruf im Browser: `http://192.168.8.1:8095`
 
@@ -171,33 +155,37 @@ Das Skript
 
 - installiert `python3`, `python3-pip`, CA-Zertifikate (opkg oder apk) und Flask –
   nur falls noch nicht vorhanden,
-- legt das Programm in `/opt/outfit-dashboard` und die Daten in
-  `/srv/outfit-dashboard` an,
+- legt `/root/Outfit-Dashboard/daten/` an,
+- übernimmt Daten früherer Versionen (`/opt/outfit-dashboard`, `/srv/outfit-dashboard`)
+  und entfernt den alten Programmordner `/opt/outfit-dashboard`,
 - richtet den Dienst mit Autostart ein,
-- trägt Programm, Daten und Dienst in `/etc/sysupgrade.conf` ein, damit sie bei
-  einem **Firmware-Update mit „Einstellungen behalten“** mitgesichert werden.
+- trägt `/root/Outfit-Dashboard/` und den Dienst in `/etc/sysupgrade.conf` ein,
+  damit beides bei einem **Firmware-Update mit „Einstellungen behalten“**
+  mitgesichert wird.
 
 ### Update auf eine neue Version
 
-1. Neuen Projektordner nach `/tmp/` auf den Router kopieren (wie oben)
-2. `cd /tmp/outfit-dashboard-mk1`
+1. Neuen Ordner `Outfit-Dashboard` nach `/tmp/` auf den Router kopieren:
+   `scp -r Outfit-Dashboard root@192.168.8.1:/tmp/`
+2. `cd /tmp/Outfit-Dashboard`
 3. `sh openwrt/update.sh`
 
 Dabei passiert:
 
 - Dienst anhalten
 - kleine Sicherung von `config.json`, `settings.json`, `clothes.json` nach
-  `/srv/outfit-dashboard/backups/vor-update-<Datum>.tar.gz` (die letzten 3 bleiben)
-- `/opt/outfit-dashboard` wird komplett ersetzt
+  `daten/backups/vor-update-<Datum>.tar.gz` (die letzten 3 bleiben)
+- Programmdateien in `/root/Outfit-Dashboard` einzeln ersetzen
 - Dienst starten
 
-`/srv/outfit-dashboard` wird dabei **nie** verändert oder gelöscht.
+`daten/` wird dabei **nie** verändert oder gelöscht.
+Danach kann `/tmp/Outfit-Dashboard` gelöscht werden (verschwindet ohnehin beim Neustart).
 
 ### Nach einem Firmware-Update des Routers
 
-Mit „Einstellungen behalten“ bleiben Programm und Daten erhalten, die
-Python-Pakete aber nicht. Dann einfach erneut `sh openwrt/install.sh` aus dem
-Projektordner ausführen – Daten bleiben unberührt.
+Mit „Einstellungen behalten“ bleibt `/root/Outfit-Dashboard` samt `daten/`
+erhalten, die Python-Pakete aber nicht. Dann einfach erneut ausführen:
+`cd /root/Outfit-Dashboard && sh openwrt/install.sh`
 Zusätzlich empfiehlt sich vorher eine **Sicherung über die Einstellungsseite**.
 
 ### Dienst bedienen
@@ -211,10 +199,8 @@ logread -e python3 -f        # Log live ansehen
 ### Speicherplatz sparen
 
 Fotos werden im Browser auf max. 900 px (JPEG) verkleinert, ein Stück belegt
-typischerweise 60–150 KB. Soll der Datenordner auf einen USB-Stick, in
-`/etc/init.d/outfit-dashboard` die Zeile `HOME_DIR=` anpassen, z. B.
-`HOME_DIR="/mnt/sda1/outfit-dashboard"`, vorhandene Daten dorthin kopieren und
-den Dienst neu starten.
+typischerweise 60–150 KB. Den Speicherverbrauch zeigt die Einstellungsseite
+unter „Datenspeicher & Sicherung“.
 
 ---
 
@@ -224,13 +210,13 @@ den Dienst neu starten.
 |-------------------------|------------|--------------------------------------------------------|
 | `host`                  | `0.0.0.0`  | Netzwerkschnittstelle (alle)                           |
 | `port`                  | `8095`     | Web-Port (nicht 80/443, die nutzt die GL.iNet-Oberfläche) |
-| `data_dir`              | `data`     | Datenordner (relativ zum Programm oder absolut)        |
+| `data_dir`              | `.`        | Ablage von settings/clothes/images, relativ zu `daten/` |
 | `max_upload_mb`         | `12`       | maximale Größe eines Fotos                             |
 | `max_backup_mb`         | `300`      | maximale Größe einer einzuspielenden Sicherung         |
 | `weather_cache_minutes` | `15`       | wie lange Wetterdaten zwischengespeichert werden       |
 | `weather_verify_ssl`    | `true`     | TLS-Zertifikate prüfen (nur bei Zertifikatsproblemen auf `false`) |
 
-Die Datei liegt im Datenordner (`/srv/outfit-dashboard/config.json`).
+Die Datei liegt unter `/root/Outfit-Dashboard/daten/config.json`.
 Ein abweichender Pfad kann über die Umgebungsvariable `OUTFIT_CONFIG` gesetzt werden.
 
 ---
@@ -271,7 +257,7 @@ Ein abweichender Pfad kann über die Umgebungsvariable `OUTFIT_CONFIG` gesetzt w
   Nicht per Portweiterleitung ins Internet freigeben.
 - Wetterdaten: [Open-Meteo.com](https://open-meteo.com/), Lizenz CC BY 4.0.
 - Datensicherung: in den Einstellungen „Sicherung herunterladen“ oder den
-  Ordner `/srv/outfit-dashboard` kopieren.
+  Ordner `/root/Outfit-Dashboard/daten` kopieren.
 
 ## Versionierung
 

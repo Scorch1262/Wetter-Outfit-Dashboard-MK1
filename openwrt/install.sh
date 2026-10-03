@@ -1,46 +1,52 @@
 #!/bin/sh
-# Outfit-Dashboard-MK1 – Installation UND Update auf GL.iNet Slate 7 (OpenWrt)
+# Outfit-Dashboard – Installation UND Update auf dem GL.iNet Slate 7 (GL-BE3600)
 #
-# Aufruf im entpackten Projektordner:   sh openwrt/install.sh
+# Alles liegt in EINEM Ordner:
 #
-# Aufteilung:
-#   /opt/outfit-dashboard        Programmdateien   -> werden bei jedem Update ersetzt
-#   /srv/outfit-dashboard        Nutzerdaten       -> bleiben IMMER erhalten
-#        ├── config.json
-#        ├── data/settings.json   (Standort, Aktivitäten)
-#        ├── data/clothes.json    (Kleidungsstücke + Labels)
-#        ├── data/images/         (Fotos)
-#        └── backups/             (automatische Sicherungen)
+#   /root/Outfit-Dashboard/
+#   ├── app.py, outfit.py, weather.py, …, templates/, static/, openwrt/   Programm
+#   └── daten/                                                            Nutzerdaten
+#       ├── config.json, settings.json, clothes.json
+#       ├── images/          Fotos
+#       └── backups/         Sicherungen
+#
+# Programmdateien werden bei jedem Update ersetzt, "daten/" bleibt immer erhalten.
+#
+# Aufruf – entweder direkt im Zielordner:
+#     cd /root/Outfit-Dashboard && sh openwrt/install.sh
+# oder aus einem neuen Projektordner heraus (Update):
+#     cd /tmp/Outfit-Dashboard && sh openwrt/install.sh
 set -e
 
-APP_DIR="/opt/outfit-dashboard"
-HOME_DIR="/srv/outfit-dashboard"
+APP_DIR="/root/Outfit-Dashboard"
+DATA_DIR="$APP_DIR/daten"
 SERVICE="outfit-dashboard"
 SRC_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-PROGRAM_FILES="app.py outfit.py weather.py storage.py version.py requirements.txt templates static"
+PROGRAM_FILES="app.py outfit.py weather.py storage.py version.py requirements.txt
+               config.example.json README.md CHANGELOG.md .gitignore templates static openwrt"
 
 say() { echo "==> $*"; }
+same_dir() { [ "$(cd "$1" 2>/dev/null && pwd -P)" = "$(cd "$2" 2>/dev/null && pwd -P)" ]; }
 
 [ -f "$SRC_DIR/app.py" ] || { echo "app.py nicht gefunden – bitte aus dem Projektordner starten."; exit 1; }
 NEW_VERSION=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$SRC_DIR/version.py")
 OLD_VERSION=""
-[ -f "$APP_DIR/version.py" ] && OLD_VERSION=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$APP_DIR/version.py")
-if [ -n "$OLD_VERSION" ]; then
-	say "Update v$OLD_VERSION -> v$NEW_VERSION"
-else
-	say "Neuinstallation v$NEW_VERSION"
-fi
+for v in "$APP_DIR/version.py" /opt/outfit-dashboard/version.py; do
+	if [ -z "$OLD_VERSION" ] && [ -f "$v" ] && ! same_dir "$(dirname "$v")" "$SRC_DIR"; then
+		OLD_VERSION=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$v")
+	fi
+done
+if [ -n "$OLD_VERSION" ]; then say "Update v$OLD_VERSION -> v$NEW_VERSION"; else say "Installation v$NEW_VERSION"; fi
 
-# --- 1. Pakete (nur falls noch nicht vorhanden) ---------------------------
-if command -v opkg >/dev/null 2>&1; then
-	PKG_UPDATE="opkg update"; PKG_ADD="opkg install"
-elif command -v apk >/dev/null 2>&1; then
-	PKG_UPDATE="apk update"; PKG_ADD="apk add"
-else
-	echo "Kein Paketmanager (opkg/apk) gefunden."; exit 1
-fi
-
+# --- 1. Pakete (nur falls noch nicht vorhanden) ----------------------------
 if ! command -v python3 >/dev/null 2>&1 || ! command -v pip3 >/dev/null 2>&1; then
+	if command -v opkg >/dev/null 2>&1; then
+		PKG_UPDATE="opkg update"; PKG_ADD="opkg install"
+	elif command -v apk >/dev/null 2>&1; then
+		PKG_UPDATE="apk update"; PKG_ADD="apk add"
+	else
+		echo "Kein Paketmanager (opkg/apk) gefunden."; exit 1
+	fi
 	FREE_KB=$(df -k /overlay 2>/dev/null | awk 'NR==2 {print $4}')
 	if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt 40000 ]; then
 		echo "WARNUNG: nur $((FREE_KB / 1024)) MB frei auf /overlay – Python + Flask brauchen ca. 30 MB."
@@ -49,72 +55,91 @@ if ! command -v python3 >/dev/null 2>&1 || ! command -v pip3 >/dev/null 2>&1; th
 	$PKG_UPDATE
 	$PKG_ADD python3 python3-pip ca-bundle ca-certificates
 fi
-
 if ! python3 -c "import flask" >/dev/null 2>&1; then
 	say "Flask installieren"
 	pip3 install --no-cache-dir -r "$SRC_DIR/requirements.txt"
 fi
 
 # --- 2. Dienst anhalten ---------------------------------------------------
-[ -x "/etc/init.d/$SERVICE" ] && "/etc/init.d/$SERVICE" stop >/dev/null 2>&1 || true
+if [ -x "/etc/init.d/$SERVICE" ]; then "/etc/init.d/$SERVICE" stop >/dev/null 2>&1 || true; fi
 
-# --- 3. Nutzerdaten sichern / aus v1.0.0 übernehmen -----------------------
-mkdir -p "$HOME_DIR"
-if [ -f "$APP_DIR/data/clothes.json" ] || [ -f "$APP_DIR/data/settings.json" ]; then
-	if [ ! -f "$HOME_DIR/data/clothes.json" ] && [ ! -f "$HOME_DIR/data/settings.json" ]; then
-		say "Alte Daten aus $APP_DIR/data nach $HOME_DIR/data übernehmen"
-		mkdir -p "$HOME_DIR/data"
-		cp -a "$APP_DIR/data/." "$HOME_DIR/data/"
-	fi
+# --- 3. Datenordner anlegen und Altbestände übernehmen --------------------
+mkdir -p "$DATA_DIR"
+has_data() { [ -f "$1/clothes.json" ] || [ -f "$1/settings.json" ]; }
+if ! has_data "$DATA_DIR"; then
+	for OLD in /srv/outfit-dashboard/data /opt/outfit-dashboard/data; do
+		if has_data "$OLD"; then
+			say "Daten aus $OLD übernehmen"
+			cp -a "$OLD/." "$DATA_DIR/"
+			OLD_CFG="$(dirname "$OLD")/config.json"
+			if [ -f "$OLD_CFG" ] && [ ! -f "$DATA_DIR/config.json" ]; then
+				sed 's/"data_dir"[^,}]*/"data_dir": "."/' "$OLD_CFG" > "$DATA_DIR/config.json"
+			fi
+			MIGRATED_FROM="$OLD"
+			break
+		fi
+	done
 fi
-if [ -f "$APP_DIR/config.json" ] && [ ! -f "$HOME_DIR/config.json" ]; then
-	say "Alte config.json übernehmen"
-	cp -a "$APP_DIR/config.json" "$HOME_DIR/config.json"
-fi
-if [ ! -f "$HOME_DIR/config.json" ]; then
-	cp "$SRC_DIR/config.example.json" "$HOME_DIR/config.json"
-fi
-if [ -f "$HOME_DIR/data/clothes.json" ]; then
-	mkdir -p "$HOME_DIR/backups"
+[ -f "$DATA_DIR/config.json" ] || cp "$SRC_DIR/config.example.json" "$DATA_DIR/config.json"
+
+if has_data "$DATA_DIR"; then
+	mkdir -p "$DATA_DIR/backups"
 	STAMP=$(date +%Y%m%d-%H%M%S)
 	# nur die kleinen JSON-Dateien – Fotos werden vom Update nie verändert
-	( cd "$HOME_DIR" && tar -czf "backups/vor-update-$STAMP.tar.gz" config.json data/*.json ) 2>/dev/null || true
-	# nur die letzten 3 Update-Sicherungen behalten
-	ls -1t "$HOME_DIR/backups"/vor-update-*.tar.gz 2>/dev/null | tail -n +4 | xargs -r rm -f
-	say "Datensicherung: $HOME_DIR/backups/vor-update-$STAMP.tar.gz"
+	( cd "$DATA_DIR" && tar -czf "backups/vor-update-$STAMP.tar.gz" ./*.json ) 2>/dev/null || true
+	ls -1t "$DATA_DIR/backups"/vor-update-*.tar.gz 2>/dev/null | tail -n +4 | xargs -r rm -f
+	say "Sicherung: daten/backups/vor-update-$STAMP.tar.gz"
 fi
 
-# --- 4. Dienst einrichten -------------------------------------------------
-cp "$SRC_DIR/openwrt/outfit-dashboard.init" "/etc/init.d/$SERVICE"
+# --- 4. Programmdateien ersetzen – daten/ wird NICHT angefasst ------------
+if same_dir "$SRC_DIR" "$APP_DIR"; then
+	say "Programm liegt bereits in $APP_DIR"
+else
+	say "Programmdateien nach $APP_DIR schreiben"
+	mkdir -p "$APP_DIR"
+	for f in $PROGRAM_FILES; do
+		[ -e "$SRC_DIR/$f" ] || continue
+		rm -rf "$APP_DIR/$f.neu"
+		cp -a "$SRC_DIR/$f" "$APP_DIR/$f.neu"
+		rm -rf "$APP_DIR/$f"
+		mv "$APP_DIR/$f.neu" "$APP_DIR/$f"
+	done
+fi
+find "$APP_DIR" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+
+# --- 5. Dienst einrichten -------------------------------------------------
+cp "$APP_DIR/openwrt/outfit-dashboard.init" "/etc/init.d/$SERVICE"
 chmod +x "/etc/init.d/$SERVICE"
 "/etc/init.d/$SERVICE" enable
 
-# --- 5. Programmdateien austauschen (Daten werden nicht angefasst) --------
-say "Programmdateien nach $APP_DIR schreiben"
-rm -rf "$APP_DIR.new"
-mkdir -p "$APP_DIR.new"
-for f in $PROGRAM_FILES; do
-	cp -a "$SRC_DIR/$f" "$APP_DIR.new/"
-done
-cp -a "$SRC_DIR/openwrt" "$APP_DIR.new/"
-cp -a "$SRC_DIR/config.example.json" "$SRC_DIR/README.md" "$SRC_DIR/CHANGELOG.md" "$APP_DIR.new/" 2>/dev/null || true
-rm -rf "$APP_DIR.old"
-[ -d "$APP_DIR" ] && mv "$APP_DIR" "$APP_DIR.old"
-mv "$APP_DIR.new" "$APP_DIR"
-rm -rf "$APP_DIR.old"
-
 # --- 6. bei Firmware-Updates ("Einstellungen behalten") mitsichern --------
-for p in "$HOME_DIR/" "$APP_DIR/" "/etc/init.d/$SERVICE"; do
+if [ -f /etc/sysupgrade.conf ]; then
+	# Einträge älterer Versionen entfernen
+	sed -i '\#^/srv/outfit-dashboard/$#d; \#^/opt/outfit-dashboard/$#d' /etc/sysupgrade.conf
+fi
+for p in "$APP_DIR/" "/etc/init.d/$SERVICE"; do
 	grep -qxF "$p" /etc/sysupgrade.conf 2>/dev/null || echo "$p" >> /etc/sysupgrade.conf
 done
 
+# --- 7. alte Programmordner früherer Versionen entfernen ------------------
+# (Daten wurden oben bereits übernommen; /srv/outfit-dashboard bleibt als Reserve liegen)
+if [ -d /opt/outfit-dashboard ] && ! same_dir /opt/outfit-dashboard "$APP_DIR"; then
+	say "Alten Programmordner /opt/outfit-dashboard entfernen"
+	rm -rf /opt/outfit-dashboard
+fi
+
 "/etc/init.d/$SERVICE" start
 
-PORT=$(sed -n 's/.*"port"[^0-9]*\([0-9]*\).*/\1/p' "$HOME_DIR/config.json" | head -n1)
+PORT=$(sed -n 's/.*"port"[^0-9]*\([0-9]*\).*/\1/p' "$DATA_DIR/config.json" | head -n1)
 IP=$(uci -q get network.lan.ipaddr || echo "<router-ip>")
 echo ""
 echo "Fertig – Outfit-Dashboard v$NEW_VERSION"
-echo "  Webseite:   http://$IP:${PORT:-8095}"
-echo "  Programm:   $APP_DIR"
-echo "  Daten:      $HOME_DIR  (bleibt bei Updates erhalten)"
-echo "  Log:        logread -e python3 -f"
+echo "  Webseite:  http://$IP:${PORT:-8095}"
+echo "  Ordner:    $APP_DIR"
+echo "  Daten:     $DATA_DIR  (bleibt bei Updates erhalten)"
+echo "  Log:       logread -e python3 -f"
+if [ -n "$MIGRATED_FROM" ] && [ -d /srv/outfit-dashboard ]; then
+	echo ""
+	echo "Hinweis: Die alten Daten in /srv/outfit-dashboard werden nicht mehr benötigt."
+	echo "         Nach Kontrolle der Webseite löschen mit:  rm -rf /srv/outfit-dashboard"
+fi

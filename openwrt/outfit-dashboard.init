@@ -1,20 +1,18 @@
 #!/bin/sh /etc/rc.common
-# procd-Startskript für Outfit-Dashboard-MK1 (GL.iNet Slate 7 / OpenWrt)
+# procd-Startskript für das Outfit-Dashboard (GL.iNet Slate 7 / OpenWrt)
 # Ziel: /etc/init.d/outfit-dashboard
 
 START=95
 STOP=10
 USE_PROCD=1
 
-APP_DIR="/opt/outfit-dashboard"
-# Nutzerdaten liegen getrennt vom Programm und überstehen Updates
-HOME_DIR="/srv/outfit-dashboard"
+# Programm und Nutzerdaten (Unterordner daten/) liegen in diesem Ordner
+APP_DIR="/root/Outfit-Dashboard"
 
 start_service() {
-	mkdir -p "$HOME_DIR"
 	procd_open_instance
 	procd_set_param command /usr/bin/python3 "$APP_DIR/app.py"
-	procd_set_param env OUTFIT_HOME="$HOME_DIR"
+	procd_set_param env OUTFIT_HOME="$APP_DIR/daten"
 	procd_set_param respawn 3600 10 0
 	procd_set_param stdout 1
 	procd_set_param stderr 1

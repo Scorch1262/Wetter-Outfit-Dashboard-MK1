@@ -2,6 +2,26 @@
 
 Alle Änderungen am Outfit-Dashboard-MK1. Versionierung nach Semantic Versioning.
 
+## [1.2.0] – 2026-10-03
+
+### Geändert
+- Alles in einem Ordner: Programm und Daten liegen gemeinsam in
+  `/root/Outfit-Dashboard` (GL.iNet Slate 7, `root@GL-BE3600:~#`)
+- Nutzerdaten im Unterordner `daten/` (`config.json`, `settings.json`,
+  `clothes.json`, `images/`, `backups/`) – flacher Aufbau ohne `data/`-Unterordner
+- Standard für `data_dir` ist jetzt `.` (relativ zu `daten/`)
+- `install.sh`/`update.sh` ersetzen die Programmdateien einzeln und lassen
+  `daten/` unangetastet; Installation auch direkt aus dem Zielordner möglich
+- Init-Skript startet aus `/root/Outfit-Dashboard` mit `OUTFIT_HOME=…/daten`
+- `/etc/sysupgrade.conf`: alte Einträge (`/opt`, `/srv`) werden durch
+  `/root/Outfit-Dashboard/` ersetzt
+
+### Neu
+- Automatische Übernahme von Daten aus v1.0.0 (`data/` im Programmordner) und
+  v1.1.0 (`/srv/outfit-dashboard`, `~/.outfit-dashboard`) nach `daten/`
+- `install.sh` entfernt den alten Programmordner `/opt/outfit-dashboard` und
+  weist auf nicht mehr benötigte Altdaten hin
+
 ## [1.1.0] – 2026-10-03
 
 ### Neu

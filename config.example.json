@@ -1,7 +1,7 @@
 {
   "host": "0.0.0.0",
   "port": 8095,
-  "data_dir": "data",
+  "data_dir": ".",
   "max_upload_mb": 12,
   "max_backup_mb": 300,
   "weather_cache_minutes": 15,

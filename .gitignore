@@ -1,4 +1,5 @@
-# Laufzeitdaten (Kleidungsstücke, Fotos, Einstellungen)
+# Laufzeitdaten (Kleidungsstücke, Fotos, Einstellungen, Konfiguration)
+daten/
 data/
 config.json
 
