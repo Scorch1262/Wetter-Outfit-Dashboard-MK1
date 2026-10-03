@@ -5,5 +5,5 @@ MINOR: neue Funktionen, abwärtskompatibel
 PATCH: Fehlerbehebungen und kleine Anpassungen
 """
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 APP_NAME = "Outfit-Dashboard-MK1"

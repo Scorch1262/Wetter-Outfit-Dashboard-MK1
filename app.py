@@ -36,9 +36,27 @@ from version import APP_NAME, __version__
 # Als EXE/App (PyInstaller) liegen Vorlagen und statische Dateien im
 # entpackten Bundle (sys._MEIPASS), die Nutzerdaten dagegen außerhalb.
 FROZEN = bool(getattr(sys, "frozen", False))
-BASE_DIR = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
-RESOURCE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
 IS_MAC_APP = FROZEN and sys.platform == "darwin"
+
+
+def _program_dir():
+    """Ordner, in dem das Programm für den Nutzer sichtbar liegt.
+
+    Python:     Ordner von app.py
+    EXE:        Ordner der .exe
+    macOS-App:  Ordner, in dem die .app liegt (nicht das Innere des Bundles)
+    """
+    if not FROZEN:
+        return os.path.dirname(os.path.abspath(__file__))
+    exe = os.path.abspath(sys.executable)
+    if sys.platform == "darwin" and ".app/Contents/MacOS" in exe:
+        bundle = exe[:exe.index(".app/Contents/MacOS") + 4]   # …/Outfit-Dashboard.app
+        return os.path.dirname(bundle)
+    return os.path.dirname(exe)
+
+
+BASE_DIR = _program_dir()
+RESOURCE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
 
 DEFAULT_CONFIG = {
     "host": "0.0.0.0",
@@ -88,7 +106,19 @@ log = logging.getLogger("outfit")
 # ---------------------------------------------------------------------------
 
 DATA_FOLDER_NAME = "daten"
-LEGACY_HOMES = ["/srv/outfit-dashboard", os.path.join(os.path.expanduser("~"), ".outfit-dashboard")]
+APP_SUPPORT_DIR = os.path.expanduser("~/Library/Application Support/Outfit-Dashboard/" + DATA_FOLDER_NAME)
+LOCALAPPDATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
+                                "Outfit-Dashboard", DATA_FOLDER_NAME)
+# frühere Speicherorte: (Ordner, Standard für data_dir ohne config.json)
+LEGACY_HOMES = [
+    ("/srv/outfit-dashboard", "data"),                                        # v1.1.0 Router
+    (os.path.join(os.path.expanduser("~"), ".outfit-dashboard"), "data"),     # v1.1.0 PC
+    (APP_SUPPORT_DIR, "."),                                                   # v1.3.0 Mac-App
+    (LOCALAPPDATA_DIR, "."),                                                  # v1.3.0 EXE-Rückfall
+]
+
+# Hinweis für die Oberfläche, falls nicht neben dem Programm gespeichert werden kann
+STORAGE_WARNING = None
 
 
 def _writable(folder):
@@ -104,29 +134,41 @@ def _writable(folder):
 
 
 def resolve_home():
-    """Datenordner wählen.
+    """Datenordner: immer "daten/" direkt neben app.py, der EXE bzw. der Mac-App.
 
-    Python/Router:  <Programmordner>/daten
-    Windows-EXE:    daten/ neben der EXE (sonst %LOCALAPPDATA%\\Outfit-Dashboard\\daten)
-    macOS-App:      ~/Library/Application Support/Outfit-Dashboard/daten
-                    (das App-Bundle selbst ist nicht beschreibbar)
+        Outfit-Dashboard.exe          Outfit-Dashboard.app          app.py
+        daten/                        daten/                        daten/
+
+    Nur wenn dort nicht geschrieben werden kann (z. B. "Programme"-Ordner unter
+    Windows oder eine von macOS isoliert gestartete App), wird ersatzweise ein
+    Benutzerordner verwendet und in den Einstellungen ein Hinweis angezeigt.
     """
+    global STORAGE_WARNING
     env = os.environ.get("OUTFIT_HOME")
     if env:
-        candidates = [env]
-    elif IS_MAC_APP:
-        candidates = [os.path.expanduser("~/Library/Application Support/Outfit-Dashboard/" + DATA_FOLDER_NAME)]
-    elif FROZEN:
-        local = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-        candidates = [os.path.join(BASE_DIR, DATA_FOLDER_NAME),
-                      os.path.join(local, "Outfit-Dashboard", DATA_FOLDER_NAME)]
-    else:
-        candidates = [os.path.join(BASE_DIR, DATA_FOLDER_NAME)]
-    for home in candidates:
-        home = os.path.abspath(home)
+        home = os.path.abspath(env)
         if _writable(home):
             return home
-        log.warning("Datenordner %s nicht beschreibbar", home)
+        log.error("Datenordner %s (OUTFIT_HOME) nicht beschreibbar.", home)
+        sys.exit(1)
+
+    home = os.path.join(BASE_DIR, DATA_FOLDER_NAME)
+    translocated = IS_MAC_APP and "/AppTranslocation/" in BASE_DIR
+    if not translocated and _writable(home):
+        return home
+
+    if translocated:
+        STORAGE_WARNING = ("macOS startet die App aus einem isolierten Ordner, deshalb können die Daten "
+                           "nicht neben der App liegen. Abhilfe: App beenden, im Terminal "
+                           "„xattr -cr <Pfad>/Outfit-Dashboard.app“ ausführen und neu starten.")
+    else:
+        STORAGE_WARNING = (f"Der Ordner neben dem Programm ({BASE_DIR}) ist nicht beschreibbar. "
+                           "Programm am besten in einen eigenen Ordner verschieben, z. B. "
+                           "Dokumente\\Outfit-Dashboard bzw. ~/Outfit-Dashboard.")
+    fallback = APP_SUPPORT_DIR if sys.platform == "darwin" else LOCALAPPDATA_DIR
+    log.warning("%s Ersatzweise genutzt: %s", STORAGE_WARNING, fallback)
+    if _writable(fallback):
+        return os.path.abspath(fallback)
     log.error("Kein beschreibbarer Datenordner gefunden.")
     sys.exit(1)
 
@@ -141,12 +183,11 @@ def _has_data(folder):
 
 
 def _legacy_sources():
-    """Mögliche Altbestände: (Konfigurationsdatei, Datenordner)."""
+    """Mögliche Altbestände: (Konfigurationsdatei, Basisordner, data_dir-Standard)."""
     sources = []
-    # v1.1.0: eigenes Datenverzeichnis außerhalb des Programms
-    for home in LEGACY_HOMES:
+    for home, default_dd in LEGACY_HOMES:
         if os.path.realpath(home) != os.path.realpath(HOME_DIR):
-            sources.append((os.path.join(home, "config.json"), home, "data"))
+            sources.append((os.path.join(home, "config.json"), home, default_dd))
     # v1.0.0: config.json und data/ direkt im Programmordner
     if not FROZEN:
         sources.append((os.path.join(BASE_DIR, "config.json"), BASE_DIR, "data"))
@@ -620,6 +661,7 @@ def api_storage():
         "data_dir": DATA_DIR,
         "config_path": CONFIG_PATH,
         "program_dir": BASE_DIR,
+        "warning": STORAGE_WARNING,
         "items": len(items),
         "activities": len(settings_store.load()["activities"]),
         "data_bytes": _dir_size(DATA_DIR),

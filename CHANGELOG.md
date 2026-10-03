@@ -2,6 +2,23 @@
 
 Alle Änderungen am Outfit-Dashboard-MK1. Versionierung nach Semantic Versioning.
 
+## [1.4.0] – 2026-10-03
+
+### Geändert
+- Windows-EXE und macOS-App speichern alle Daten jetzt im Ordner `daten/`
+  **direkt neben** der EXE bzw. der `.app` – wie die Python- und Router-Version
+- macOS: Programmordner ist der Ordner, in dem die `.app` liegt (nicht das
+  Innere des Bundles)
+- Hinweistext in „Datenspeicher & Sicherung“ nennt den neuen Ablageort
+
+### Neu
+- Daten aus den v1.3.0-Orten (`%LOCALAPPDATA%\Outfit-Dashboard\daten`,
+  `~/Library/Application Support/Outfit-Dashboard/daten`) werden beim ersten
+  Start automatisch nach `daten/` neben dem Programm übernommen
+- Ist der Ordner neben dem Programm nicht beschreibbar oder startet macOS die
+  App isoliert (App Translocation), wird ersatzweise ein Benutzerordner
+  verwendet und in den Einstellungen ein Hinweis mit Abhilfe angezeigt
+
 ## [1.3.0] – 2026-10-03
 
 ### Neu

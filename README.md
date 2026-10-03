@@ -7,7 +7,7 @@ iPhone und gedacht für den Dauerbetrieb auf einem **GL.iNet Slate 7** (OpenWrt)
 Zusätzlich gibt es eine **Windows-EXE** und eine **macOS-App**, die per GitHub
 Actions automatisch gebaut und als Release veröffentlicht werden.
 
-Aktuelle Version: **v1.3.0**
+Aktuelle Version: **v1.4.0**
 
 > **Alles in einem Ordner:** `/root/Outfit-Dashboard` (auf dem Router
 > `root@GL-BE3600:~# Outfit-Dashboard`). Die Nutzerdaten liegen darin im
@@ -237,22 +237,44 @@ Unter **Releases** im GitHub-Repo liegen pro Version:
 - Beim ersten Start fragt die Firewall, ob Zugriffe aus dem Netzwerk erlaubt
   werden – für das iPhone „Zulassen“ wählen.
 
-### Datenordner der Desktop-Versionen
+### Datenordner – immer direkt neben dem Programm
 
-| Version     | Datenordner                                                         |
-|-------------|---------------------------------------------------------------------|
-| Windows-EXE | `daten\` neben der EXE (falls nicht beschreibbar: `%LOCALAPPDATA%\Outfit-Dashboard\daten`) |
-| macOS-App   | `~/Library/Application Support/Outfit-Dashboard/daten`              |
+Bei allen Varianten entsteht der Ordner `daten/` **im selben Verzeichnis**,
+in dem das Programm liegt:
 
-Beim Update einfach die EXE bzw. App ersetzen – der Datenordner bleibt.
-Umzug zwischen Router und PC: **Einstellungen → Sicherung herunterladen** und
-auf dem anderen Gerät **Sicherung einspielen**.
+```
+Windows                      macOS                        Python / Router
+Outfit-Dashboard\            Outfit-Dashboard/            Outfit-Dashboard/
+├── Outfit-Dashboard.exe     ├── Outfit-Dashboard.app     ├── app.py …
+└── daten\                   └── daten/                   └── daten/
+```
+
+Empfehlung: EXE bzw. App in einen **eigenen Ordner** legen (z. B.
+`Dokumente\Outfit-Dashboard` oder `~/Outfit-Dashboard`), nicht direkt auf den
+Desktop oder in „Downloads“.
+
+Beim Update einfach die EXE bzw. App durch die neue ersetzen – `daten/`
+bleibt liegen. Zum Umziehen den ganzen Ordner (Programm + `daten/`) kopieren.
+
+**Sonderfälle** – dann wird ersatzweise ein Benutzerordner verwendet und in den
+Einstellungen unter „Datenspeicher & Sicherung“ ein Hinweis angezeigt:
+
+- Windows: Ordner nicht beschreibbar (z. B. `C:\Programme`) →
+  `%LOCALAPPDATA%\Outfit-Dashboard\daten`
+- macOS: App wird von macOS isoliert gestartet („App Translocation“, passiert bei
+  frisch heruntergeladenen Apps) → `~/Library/Application Support/Outfit-Dashboard/daten`.
+  Abhilfe: `xattr -cr <Pfad>/Outfit-Dashboard.app` und neu starten.
+
+Daten, die v1.3.0 noch in `%LOCALAPPDATA%` bzw. `Application Support` abgelegt
+hat, werden beim ersten Start automatisch nach `daten/` neben dem Programm übernommen.
 
 ### Nicht signiert
 
 - **Windows SmartScreen:** „Weitere Informationen“ → „Trotzdem ausführen“
-- **macOS Gatekeeper:** App beim ersten Mal per **Rechtsklick → Öffnen** starten,
-  oder im Terminal: `xattr -cr /Applications/Outfit-Dashboard.app`
+- **macOS Gatekeeper:** im Terminal einmalig
+  `xattr -cr ~/Outfit-Dashboard/Outfit-Dashboard.app` ausführen (Pfad anpassen).
+  Das entfernt die Download-Markierung, dann startet die App normal **und**
+  kann ihre Daten neben sich ablegen. Alternativ Rechtsklick → „Öffnen“.
 
 ---
 

@@ -341,7 +341,8 @@ async function loadStorage() {
       <dt>Datenordner</dt><dd><code>${esc(s.home_dir)}</code></dd>
       <dt>Programm</dt><dd><code>${esc(s.program_dir)}</code></dd>
       <dt>Inhalt</dt><dd>${s.items} Kleidungsstücke · ${s.activities} Aktivitäten · ${fmtBytes(s.data_bytes)}</dd>
-      <dt>Frei</dt><dd>${fmtBytes(s.free_bytes)}</dd>`;
+      <dt>Frei</dt><dd>${fmtBytes(s.free_bytes)}</dd>
+      ${s.warning ? `<dt class="warn-dt">Hinweis</dt><dd class="warn-dd">${esc(s.warning)}</dd>` : ""}`;
   } catch (e) { $("#storageInfo").innerHTML = `<dt>Fehler</dt><dd>${esc(e.message)}</dd>`; }
 }
 

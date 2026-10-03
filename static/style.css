@@ -323,3 +323,4 @@ details.manual[open] summary { margin-bottom: 10px; }
 a.btn { text-decoration: none; }
 @media (max-width: 400px) { .grid-2 .btn { font-size: 13.5px; padding: 0 10px; white-space: normal; text-align: center; } }
 #shutdownBox { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.kv .warn-dt, .kv .warn-dd { color: var(--amber); }

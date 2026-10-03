@@ -199,12 +199,16 @@ jobs:
 
           | Datei | Für |
           |-------|-----|
-          | `…-windows.exe` | Windows 10/11 – Doppelklick startet Server und Browser |
-          | `…-macos.zip` | macOS (Apple Silicon) – entpacken, App per Rechtsklick → „Öffnen“ starten |
+          | `…-windows.exe` | Windows 10/11 – in einen eigenen Ordner legen, Doppelklick startet Server und Browser |
+          | `…-macos.zip` | macOS (Apple Silicon) – entpacken, App in einen eigenen Ordner legen |
           | `…-router.zip` | GL.iNet Slate 7 / OpenWrt – Ordner `Outfit-Dashboard` nach `/root/` kopieren, `sh openwrt/install.sh` |
 
+          Alle Daten landen im Ordner `daten/` direkt neben der EXE bzw. der App.
+          Beim Update nur die EXE bzw. App ersetzen – `daten/` bleibt erhalten.
+
           Die Programme sind nicht signiert. Windows SmartScreen: „Weitere Informationen“ → „Trotzdem ausführen“.
-          macOS: beim ersten Start Rechtsklick → „Öffnen“, oder im Terminal `xattr -cr Outfit-Dashboard.app`.
+          macOS: einmalig im Terminal `xattr -cr <Ordner>/Outfit-Dashboard.app` ausführen – dann startet die App
+          normal und kann `daten/` neben sich anlegen.
           EOF
           cat notes.md
 
