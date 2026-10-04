@@ -37,6 +37,52 @@
   </div>
 </section>
 
+<!-- Schnell-Bearbeitung im Kleiderschrank ------------------------------->
+<div class="sheet-backdrop hidden" id="editSheet" aria-hidden="true">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div class="sheet-head">
+      <img id="sheetImg" alt="">
+      <div class="sheet-head-text">
+        <div class="piece-slot" id="sheetType"></div>
+        <h3 id="sheetTitle"></h3>
+      </div>
+      <button class="sheet-close" id="sheetClose" type="button" aria-label="Schließen">✕</button>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Aktivitäten</span>
+      <div class="chips" id="sheetActs"></div>
+    </div>
+
+    <div class="field" id="sheetTempField">
+      <span class="field-label">Geeignet für Temperatur</span>
+      <div id="sheetTempBar"></div>
+      <div class="grid-2 sliders">
+        <label>von<input type="range" id="sheetTempMin" min="1" max="6" step="1"></label>
+        <label>bis<input type="range" id="sheetTempMax" min="1" max="6" step="1"></label>
+      </div>
+    </div>
+
+    <div class="field" id="sheetRainField">
+      <span class="field-label">Geeignet für Niederschlag</span>
+      <div id="sheetRainBar"></div>
+      <div class="grid-2 sliders">
+        <label>von<input type="range" id="sheetRainMin" min="1" max="6" step="1"></label>
+        <label>bis<input type="range" id="sheetRainMax" min="1" max="6" step="1"></label>
+      </div>
+    </div>
+
+    <p class="hint hidden" id="sheetNoWeather"></p>
+    <div class="form-errors" id="sheetErrors"></div>
+
+    <div class="sheet-actions">
+      <button class="btn btn-primary btn-block" id="sheetSave" type="button">Speichern</button>
+      <a class="btn btn-ghost btn-block" id="sheetFull" href="/einstellungen">Foto, Name, Typ &amp; Farbe bearbeiten</a>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='user.js') }}?v={{ version }}"></script>

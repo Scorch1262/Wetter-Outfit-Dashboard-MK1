@@ -2,6 +2,22 @@
 
 Alle Änderungen am Outfit-Dashboard-MK1. Versionierung nach Semantic Versioning.
 
+## [1.7.0] – 2026-10-04
+
+### Neu
+- **Bearbeiten im Kleiderschrank:** Antippen eines Kleidungsstücks öffnet ein
+  Bearbeitungsfenster (Bottom-Sheet, auf größeren Bildschirmen zentriert) mit
+  - Aktivitäts-Labels zum An-/Abwählen
+  - Temperatur- und Niederschlagsstufen (6-stufige Schieberegler mit Vorschau),
+    jeweils nur, wenn der Typ diese Angabe hat
+  - „Speichern“ – Karte wird kurz hervorgehoben, Outfit wird neu berechnet
+  - Sprung „Foto, Name, Typ & Farbe bearbeiten“ in die vollständige
+    Bearbeitung des Stücks in den Einstellungen
+- Einstellungen öffnen über `/einstellungen#bearbeiten=<id>` direkt die
+  Bearbeitung eines Stücks
+- Karten zeigen ein Stift-Symbol, sind per Tastatur bedienbar (Enter/Leertaste);
+  Fenster schließt per ✕, Escape oder Tippen auf den Hintergrund
+
 ## [1.6.0] – 2026-10-04
 
 ### Geändert

@@ -471,4 +471,12 @@ $("#btnShutdown").addEventListener("click", async () => {
   setupSliders();
   resetForm();
   await loadClothes();
+  // Aufruf aus dem Kleiderschrank: /einstellungen#bearbeiten=<id>
+  const m = location.hash.match(/^#bearbeiten=(.+)$/);
+  if (m) {
+    const id = decodeURIComponent(m[1]);
+    history.replaceState(null, "", location.pathname);
+    if (S.clothes.some(c => c.id === id)) editItem(id);
+    else toast("Kleidungsstück nicht gefunden.", true);
+  }
 })();

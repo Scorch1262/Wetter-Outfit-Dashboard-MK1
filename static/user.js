@@ -189,7 +189,11 @@ function renderWardrobe() {
     const tags = (it.activities || []).length
       ? it.activities.map(a => `<span class="tag">${esc(actName(a))}</span>`).join("")
       : `<span class="tag tag-empty">keine Aktivität</span>`;
-    return `<article class="w-card">
+    return `<article class="w-card" data-id="${esc(it.id)}" role="button" tabindex="0"
+        aria-label="${esc(it.name)} bearbeiten">
+      <span class="w-edit" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15"><path fill="none"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+        d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg></span>
       <div class="w-img"><img src="/bilder/${encodeURIComponent(it.image)}" alt="${esc(it.name)}" loading="lazy"></div>
       <div class="w-body">
         <div class="w-name">${esc(it.name)}</div>
@@ -200,6 +204,139 @@ function renderWardrobe() {
     </article>`;
   }).join("") || `<div class="dim center pad" style="grid-column:1/-1">Keine Stücke dieses Typs.</div>`;
 }
+
+/* ---------------- Schnell-Bearbeitung ---------------- */
+const sheet = { item: null, acts: new Set(), lastFocus: null };
+
+function typeInfo(id) {
+  return state.meta.types.find(t => t.id === id) || { temp: true, rain: true };
+}
+
+function sheetBars() {
+  const tlo = +$("#sheetTempMin").value, thi = +$("#sheetTempMax").value;
+  const rlo = +$("#sheetRainMin").value, rhi = +$("#sheetRainMax").value;
+  $("#sheetTempBar").innerHTML = levelBar("temp", tlo, thi, L().t, null, { labels: true });
+  $("#sheetRainBar").innerHTML = levelBar("rain", rlo, rhi, L().r, null, { labels: true });
+}
+
+function renderSheetActs() {
+  const acts = state.meta.activities;
+  $("#sheetActs").innerHTML = acts.length
+    ? acts.map(a => `<span class="chip ${sheet.acts.has(a.id) ? "on" : ""}" data-act="${esc(a.id)}"
+        role="checkbox" aria-checked="${sheet.acts.has(a.id)}" tabindex="0">${esc(a.name)}</span>`).join("")
+    : `<span class="dim small">Noch keine Aktivitäten – in den Einstellungen anlegen.</span>`;
+}
+
+function openSheet(id) {
+  const it = state.clothes.find(c => c.id === id);
+  if (!it) return;
+  sheet.item = it;
+  sheet.acts = new Set(it.activities || []);
+  sheet.lastFocus = document.activeElement;
+  const ti = typeInfo(it.type);
+  $("#sheetImg").src = "/bilder/" + encodeURIComponent(it.image);
+  $("#sheetType").textContent = subName(it) ? `${typeName(it.type)} · ${subName(it)}` : typeName(it.type);
+  $("#sheetTitle").textContent = it.name;
+  $("#sheetTempField").classList.toggle("hidden", ti.temp === false);
+  $("#sheetRainField").classList.toggle("hidden", ti.rain === false);
+  const note = ti.temp === false && ti.rain === false
+    ? `Für ${ti.name} gibt es keine Temperatur- und Niederschlagsangabe.`
+    : ti.rain === false ? `Für ${ti.name} gibt es keine Niederschlagsangabe.` : "";
+  $("#sheetNoWeather").textContent = note;
+  $("#sheetNoWeather").classList.toggle("hidden", !note);
+  $("#sheetTempMin").value = it.temp_level_min ?? 2; $("#sheetTempMax").value = it.temp_level_max ?? 5;
+  $("#sheetRainMin").value = it.rain_level_min ?? 1; $("#sheetRainMax").value = it.rain_level_max ?? 3;
+  $("#sheetErrors").textContent = "";
+  $("#sheetFull").href = "/einstellungen#bearbeiten=" + encodeURIComponent(it.id);
+  renderSheetActs();
+  sheetBars();
+  $("#editSheet").classList.remove("hidden");
+  $("#editSheet").setAttribute("aria-hidden", "false");
+  document.documentElement.classList.add("sheet-open");
+  $("#sheetClose").focus();
+}
+
+function closeSheet() {
+  $("#editSheet").classList.add("hidden");
+  $("#editSheet").setAttribute("aria-hidden", "true");
+  document.documentElement.classList.remove("sheet-open");
+  sheet.item = null;
+  if (sheet.lastFocus && sheet.lastFocus.focus) sheet.lastFocus.focus();
+}
+
+$("#wardrobeGrid").addEventListener("click", e => {
+  const card = e.target.closest(".w-card[data-id]");
+  if (card) openSheet(card.dataset.id);
+});
+$("#wardrobeGrid").addEventListener("keydown", e => {
+  const card = e.target.closest(".w-card[data-id]");
+  if (card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openSheet(card.dataset.id); }
+});
+
+$("#sheetActs").addEventListener("click", e => {
+  const chip = e.target.closest("[data-act]");
+  if (!chip) return;
+  const id = chip.dataset.act;
+  sheet.acts.has(id) ? sheet.acts.delete(id) : sheet.acts.add(id);
+  renderSheetActs();
+});
+$("#sheetActs").addEventListener("keydown", e => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.closest("[data-act]")) { e.preventDefault(); e.target.click(); }
+});
+
+// "von" darf nicht über "bis" liegen und umgekehrt
+for (const [a, b, isMin] of [["sheetTempMin", "sheetTempMax", true], ["sheetTempMax", "sheetTempMin", false],
+                             ["sheetRainMin", "sheetRainMax", true], ["sheetRainMax", "sheetRainMin", false]]) {
+  $("#" + a).addEventListener("input", () => {
+    const A = $("#" + a), B = $("#" + b);
+    if (isMin && +A.value > +B.value) B.value = A.value;
+    if (!isMin && +A.value < +B.value) B.value = A.value;
+    sheetBars();
+  });
+}
+
+$("#sheetClose").addEventListener("click", closeSheet);
+$("#editSheet").addEventListener("click", e => { if (e.target.id === "editSheet") closeSheet(); });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && sheet.item) closeSheet();
+});
+
+$("#sheetSave").addEventListener("click", async () => {
+  const it = sheet.item;
+  if (!it) return;
+  const ti = typeInfo(it.type);
+  // alle bestehenden Angaben mitschicken, nur Labels und Wetterwerte ändern sich
+  const fd = new FormData();
+  fd.append("name", it.name);
+  fd.append("type", it.type);
+  if (it.subtype) fd.append("subtype", it.subtype);
+  fd.append("color", it.color);
+  sheet.acts.forEach(a => fd.append("activities", a));
+  if (ti.temp !== false) {
+    fd.append("temp_level_min", $("#sheetTempMin").value);
+    fd.append("temp_level_max", $("#sheetTempMax").value);
+  }
+  if (ti.rain !== false) {
+    fd.append("rain_level_min", $("#sheetRainMin").value);
+    fd.append("rain_level_max", $("#sheetRainMax").value);
+  }
+  const btn = $("#sheetSave");
+  btn.disabled = true;
+  try {
+    await api(`/api/clothes/${encodeURIComponent(it.id)}`, { method: "POST", body: fd });
+    const id = it.id;
+    closeSheet();
+    toast("Gespeichert");
+    await loadWardrobe();
+    const card = $(`.w-card[data-id="${CSS.escape(id)}"]`);
+    if (card) { card.classList.add("saved"); setTimeout(() => card.classList.remove("saved"), 1600); }
+    loadOutfit();  // Zusammenstellung mit den neuen Angaben neu berechnen
+  } catch (err) {
+    $("#sheetErrors").textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 async function loadWardrobe() {
   try {

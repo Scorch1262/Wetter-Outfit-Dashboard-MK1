@@ -7,7 +7,7 @@ iPhone und gedacht für den Dauerbetrieb auf einem **GL.iNet Slate 7** (OpenWrt)
 Zusätzlich gibt es eine **Windows-EXE** und eine **macOS-App**, die per GitHub
 Actions automatisch gebaut und als Release veröffentlicht werden.
 
-Aktuelle Version: **v1.6.0**
+Aktuelle Version: **v1.7.0**
 
 > **Alles in einem Ordner:** `/root/Outfit-Dashboard` (auf dem Router
 > `root@GL-BE3600:~# Outfit-Dashboard`). Die Nutzerdaten liegen darin im
@@ -35,6 +35,11 @@ Aktuelle Version: **v1.6.0**
 - **Reiter „Kleiderschrank“**: alle Stücke mit Bild, Temperatur- und
   Niederschlags-Balken (je 6 Stufen, heutige Stufe markiert) und den
   Aktivitäts-Labels darunter; Filter nach Typ bzw. T-Shirt/Pullover/Jacke
+  - **Antippen eines Kleidungsstücks** öffnet ein Bearbeitungsfenster:
+    Aktivitäts-Labels an-/abwählen, Temperatur- und Niederschlagsstufen
+    einstellen, speichern – ohne die Seite zu wechseln
+  - Über „Foto, Name, Typ & Farbe bearbeiten“ geht es direkt in die
+    vollständige Bearbeitung dieses Stücks in den Einstellungen
 
 ### Einstellungen (`/einstellungen`)
 - **Versionsnummer** oben neben der Überschrift und im Bereich „Datenspeicher & Sicherung“
