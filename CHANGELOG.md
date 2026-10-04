@@ -2,6 +2,28 @@
 
 Alle Änderungen am Outfit-Dashboard-MK1. Versionierung nach Semantic Versioning.
 
+## [1.6.0] – 2026-10-04
+
+### Geändert
+- Nutzeransicht: Die Auswahl **„Alle“** in der Aktivitäten-Leiste entfällt –
+  es ist immer genau eine Aktivität aktiv (Standard: erste Aktivität,
+  die letzte Wahl wird gemerkt). Im Kleiderschrank bleibt der Filter „Alle“.
+- **Unterwäsche** hat keine Temperatur- und Niederschlagswerte mehr,
+  **Socken** keine Niederschlagswerte; die Felder werden im Formular
+  ausgeblendet und vorhandene Werte beim Laden entfernt
+- Unterwäsche wird ohne Wetterbezug ausgewählt
+
+### Neu
+- Wird ein **Pullover** vorgeschlagen, zählt die **Temperatur des T-Shirts** nicht
+- Wird die **Jacke wegen Niederschlags** (nicht wegen Kälte) vorgeschlagen,
+  zählt der **Niederschlag von T-Shirt und Pullover** nicht
+- Ignorierte Werte werden im Outfit ausgegraut und mit Begründung
+  („zählt heute nicht – Pullover darüber“) angezeigt
+- **Versionsnummer in den Einstellungen** (neben der Überschrift und im Bereich
+  „Datenspeicher & Sicherung“)
+- `/api/meta` liefert je Typ, ob es Temperatur-/Niederschlagswerte gibt;
+  `/api/outfit` liefert je Teil die ignorierten Werte (`ignored`)
+
 ## [1.5.0] – 2026-10-03
 
 ### Neu

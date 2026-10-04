@@ -5,7 +5,7 @@ const state = {
   meta: null,
   weather: null,
   clothes: [],
-  activity: store("outfit.activity") || "alle",
+  activity: store("outfit.activity") || null,
   typeFilter: "alle",
 };
 
@@ -59,8 +59,15 @@ async function loadWeather() {
 
 /* ---------------- Aktivitäten-Leiste ---------------- */
 function renderRail() {
-  const acts = [{ id: "alle", name: "Alle" }, ...state.meta.activities];
-  if (!acts.some(a => a.id === state.activity)) state.activity = "alle";
+  // keine Auswahl "Alle" mehr – es ist immer genau eine Aktivität gewählt
+  const acts = state.meta.activities;
+  if (!acts.length) {
+    state.activity = "alle";  // ohne Aktivitäten: Zusammenstellung ohne Filter
+    $("#activityRail").innerHTML = `<div class="rail-empty">Keine Aktivitäten.<br>
+      <a href="/einstellungen">Anlegen</a></div>`;
+    return;
+  }
+  if (!acts.some(a => a.id === state.activity)) state.activity = acts[0].id;
   $("#activityRail").innerHTML = acts.map(a =>
     `<button class="act-btn ${a.id === state.activity ? "active" : ""}" data-act="${esc(a.id)}">${esc(a.name)}</button>`
   ).join("");
@@ -96,9 +103,8 @@ function renderOutfit(o) {
       </div></div>`;
     }
     const it = p.item, col = colorById(it.color);
-    const bars =
-      levelBar("temp", it.temp_level_min, it.temp_level_max, L().t, target ? target.temp_level : null) +
-      levelBar("rain", it.rain_level_min, it.rain_level_max, L().r, target ? target.rain_level : null);
+    const bars = itemBars(it, state.meta, target ? target.temp_level : null,
+                          target ? target.rain_level : null, p.ignored || {});
     return `<article class="piece">
       <div class="piece-img"><img src="/bilder/${encodeURIComponent(it.image)}" alt="${esc(it.name)}" loading="lazy"></div>
       <div class="piece-body">
@@ -188,8 +194,7 @@ function renderWardrobe() {
       <div class="w-body">
         <div class="w-name">${esc(it.name)}</div>
         <div class="w-meta"><span class="swatch-dot" style="background:${colorBg(col)}"></span>${esc(itemTypeName(it))} · ${esc(col ? col.name : "")}</div>
-        ${levelBar("temp", it.temp_level_min, it.temp_level_max, L().t, target ? levelOf(target.temp, L().t) : null)}
-        ${levelBar("rain", it.rain_level_min, it.rain_level_max, L().r, target ? levelOf(target.rain, L().r) : null)}
+        ${itemBars(it, state.meta, target ? levelOf(target.temp, L().t) : null, target ? levelOf(target.rain, L().r) : null)}
         <div class="w-tags">${tags}</div>
       </div>
     </article>`;

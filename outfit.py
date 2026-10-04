@@ -16,16 +16,23 @@ import random
 # Kleidungstypen
 # ---------------------------------------------------------------------------
 
+# temp/rain: ob der Typ eine Temperatur- bzw. Niederschlagsangabe hat
 TYPES = [
-    {"id": "oberteil", "name": "Oberteil"},      # Kategorie mit Untertypen (siehe SUBTYPES)
-    {"id": "hose", "name": "Hose"},
-    {"id": "unterwaesche", "name": "Unterwäsche"},
-    {"id": "schuhe", "name": "Schuhe"},
-    {"id": "socken", "name": "Socken"},
-    {"id": "kopfbedeckung", "name": "Kopfbedeckung"},
-    {"id": "accessoire", "name": "Accessoire"},
-    {"id": "sonstiges", "name": "Sonstiges"},
+    {"id": "oberteil", "name": "Oberteil", "temp": True, "rain": True},  # Kategorie mit Untertypen
+    {"id": "hose", "name": "Hose", "temp": True, "rain": True},
+    {"id": "unterwaesche", "name": "Unterwäsche", "temp": False, "rain": False},
+    {"id": "schuhe", "name": "Schuhe", "temp": True, "rain": True},
+    {"id": "socken", "name": "Socken", "temp": True, "rain": False},
+    {"id": "kopfbedeckung", "name": "Kopfbedeckung", "temp": True, "rain": True},
+    {"id": "accessoire", "name": "Accessoire", "temp": True, "rain": True},
+    {"id": "sonstiges", "name": "Sonstiges", "temp": True, "rain": True},
 ]
+TYPE_BY_ID = {t["id"]: t for t in TYPES}
+
+
+def has_attr(type_id, kind):
+    """Hat dieser Typ eine Angabe für kind ("temp" oder "rain")?"""
+    return TYPE_BY_ID.get(type_id, {}).get(kind, True)
 # Untertypen der Kategorie Oberteil – von innen nach außen
 SUBTYPES = {
     "oberteil": [
@@ -189,14 +196,14 @@ def _level_fit(a, b, level):
     return {1: 0.55, 2: 0.2}.get(dist, 0.0)
 
 
-def temp_fit(item, target):
-    if not target:
+def temp_fit(item, target, ignore=()):
+    if not target or "temp" in ignore or not has_attr(item.get("type"), "temp"):
         return 1.0
     return _level_fit(item.get("temp_level_min", 1), item.get("temp_level_max", 6), target.get("temp_level"))
 
 
-def rain_fit(item, target):
-    if not target:
+def rain_fit(item, target, ignore=()):
+    if not target or "rain" in ignore or not has_attr(item.get("type"), "rain"):
         return 1.0
     return _level_fit(item.get("rain_level_min", 1), item.get("rain_level_max", 6), target.get("rain_level"))
 
@@ -243,8 +250,8 @@ def _matches_activity(item, activity):
     return activity in (None, "", "alle") or activity in (item.get("activities") or [])
 
 
-def _weather_score(item, target):
-    return W_TEMP * temp_fit(item, target) + W_RAIN * rain_fit(item, target)
+def _weather_score(item, target, ignore=()):
+    return W_TEMP * temp_fit(item, target, ignore) + W_RAIN * rain_fit(item, target, ignore)
 
 
 def _color_vs(item, others):
@@ -254,16 +261,19 @@ def _color_vs(item, others):
     return sum(color_pair_score(item.get("color"), c) for c in ref) / len(ref)
 
 
-def _piece(slot, slot_name, item, target, reason=None):
+def _piece(slot, slot_name, item, target, reason=None, ignore=None):
     if item is None:
         return {"slot": slot, "slot_name": slot_name, "item": None, "reason": reason}
+    ignore = ignore or {}
     return {
         "slot": slot,
         "slot_name": slot_name,
         "item": item,
+        # ignored: {"temp": "Begründung", "rain": "Begründung"} – Wert zählt heute nicht
+        "ignored": ignore,
         "fit": {
-            "temp": round(temp_fit(item, target), 2),
-            "rain": round(rain_fit(item, target), 2),
+            "temp": round(temp_fit(item, target, ignore), 2),
+            "rain": round(rain_fit(item, target, ignore), 2),
         },
     }
 
@@ -285,27 +295,41 @@ def build_outfit(items, activity=None, target=None, rng=None, rules=None):
     # Basis-Oberteil: T-Shirt; gibt es keins, ersatzweise ein Pullover (falls erlaubt)
     base_pool = tshirts or (pullis if layers["pullover"] else [])
 
+    # Ausnahmen: was unter einer Schicht liegt, muss das Wetter nicht selbst abdecken
+    #  - Pullover (immer wegen Temperatur) darüber -> Temperatur des T-Shirts zählt nicht
+    #  - Jacke nur wegen Niederschlag darüber -> Niederschlag von T-Shirt und Pullover zählt nicht
+    pulli_on_top = layers["pullover"] and bool(tshirts) and bool(pullis)
+    jacket_for_rain = layers["jacket"] and layers["jacket_reason"] == "regen" and bool(jackets)
+    ign_shirt, ign_pulli = {}, {}
+    if pulli_on_top:
+        ign_shirt["temp"] = "Pullover darüber"
+    if jacket_for_rain:
+        ign_shirt["rain"] = "Jacke wegen Niederschlag"
+        ign_pulli["rain"] = "Jacke wegen Niederschlag"
+
     # --- Basis-Oberteil + Hose gemeinsam bewerten -----------------------
     pairs = [(t, p) for t in base_pool for p in pants]
     if len(pairs) > 5000:
         pairs = rng.sample(pairs, 5000)
     cands = []
     for t, p in pairs:
-        w = (_weather_score(t, target) + _weather_score(p, target)) / 2
+        w = (_weather_score(t, target, ign_shirt if t.get("subtype") == "tshirt" else ign_pulli)
+             + _weather_score(p, target)) / 2
         cands.append((w + W_COLOR * color_pair_score(t.get("color"), p.get("color")), (t, p)))
     base = pant = None
     if cands:
         base, pant = _weighted_choice(rng, cands)
     else:
         if base_pool:
-            base = _weighted_choice(rng, [(_weather_score(t, target), t) for t in base_pool])
+            base = _weighted_choice(rng, [(_weather_score(t, target, ign_shirt if t.get("subtype") == "tshirt"
+                                                          else ign_pulli), t) for t in base_pool])
         if pants:
             pant = _weighted_choice(rng, [(_weather_score(p, target), p) for p in pants])
 
     # --- Pullover über dem T-Shirt ----------------------------------------
     pulli = None
     if layers["pullover"] and base is not None and base.get("subtype") == "tshirt" and pullis:
-        pulli = _weighted_choice(rng, [(_weather_score(x, target) + W_COLOR * _color_vs(x, [base, pant]), x)
+        pulli = _weighted_choice(rng, [(_weather_score(x, target, ign_pulli) + W_COLOR * _color_vs(x, [base, pant]), x)
                                        for x in pullis])
 
     # --- Jacke als äußerste Schicht --------------------------------------
@@ -331,7 +355,7 @@ def build_outfit(items, activity=None, target=None, rng=None, rules=None):
         uc = []
         for u in under:
             bonus = 0.15 if activity not in (None, "", "alle") and activity in (u.get("activities") or []) else 0.0
-            uc.append((0.6 * temp_fit(u, target) + bonus, u))
+            uc.append((0.6 + bonus, u))  # Unterwäsche hat keine Wetterwerte
         undie = _weighted_choice(rng, uc, sharpness=0.12)
 
     # --- Farbharmonie der sichtbaren Teile ---------------------------------
@@ -352,9 +376,11 @@ def build_outfit(items, activity=None, target=None, rng=None, rules=None):
         pieces.append(_piece("jacke", "Oberteil · Jacke", jacket, target, missing("Jacke", jackets_all, jackets)))
     if layers["pullover"] and (base is None or base.get("subtype") == "tshirt"):
         pieces.append(_piece("pullover", "Oberteil · Pullover", pulli, target,
-                             missing("Pullover", pullis_all, pullis)))
-    base_name = "Oberteil · " + ("Pullover" if base is not None and base.get("subtype") == "pullover" else "T-Shirt")
-    pieces.append(_piece("oberteil", base_name, base, target, missing("T-Shirt", tshirts_all, tshirts)))
+                             missing("Pullover", pullis_all, pullis), ign_pulli))
+    base_is_shirt = base is None or base.get("subtype") == "tshirt"
+    base_name = "Oberteil · " + ("T-Shirt" if base_is_shirt else "Pullover")
+    pieces.append(_piece("oberteil", base_name, base, target, missing("T-Shirt", tshirts_all, tshirts),
+                         ign_shirt if base_is_shirt else ign_pulli))
     pieces += [
         _piece("hose", "Hose", pant, target, missing("Hose", pants_all, pants)),
         _piece("unterwaesche", "Unterwäsche", undie, target, missing("Unterwäsche", under, under)),

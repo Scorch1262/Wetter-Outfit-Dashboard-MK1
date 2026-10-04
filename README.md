@@ -7,7 +7,7 @@ iPhone und gedacht für den Dauerbetrieb auf einem **GL.iNet Slate 7** (OpenWrt)
 Zusätzlich gibt es eine **Windows-EXE** und eine **macOS-App**, die per GitHub
 Actions automatisch gebaut und als Release veröffentlicht werden.
 
-Aktuelle Version: **v1.5.0**
+Aktuelle Version: **v1.6.0**
 
 > **Alles in einem Ordner:** `/root/Outfit-Dashboard` (auf dem Router
 > `root@GL-BE3600:~# Outfit-Dashboard`). Die Nutzerdaten liegen darin im
@@ -27,8 +27,9 @@ Aktuelle Version: **v1.5.0**
     **Hose, Unterwäsche** und einer **Schuh-Empfehlung**, Bilder untereinander
   - Zeile darüber erklärt, warum heute Pullover/Jacke vorgeschlagen werden
   - wird bei **jedem Neuladen** neu gewürfelt (zusätzlich Knopf „Neu“)
-  - **Aktivitäten-Leiste** an der Seite: Oberteil und Hose werden nur aus Stücken
-    mit dem passenden Aktivitäts-Label gewählt („Alle“ = ohne Filter)
+  - **Aktivitäten-Leiste** an der Seite: Oberteile und Hosen werden nur aus Stücken
+    mit dem passenden Aktivitäts-Label gewählt. Es ist immer genau eine Aktivität
+    aktiv (keine Auswahl „Alle“); die letzte Wahl wird gemerkt.
   - Auswahl nach **Farbharmonie** und **Wetterpassung** (Temperatur + Niederschlag),
     Bewertung als Prozent-Badges
 - **Reiter „Kleiderschrank“**: alle Stücke mit Bild, Temperatur- und
@@ -36,6 +37,7 @@ Aktuelle Version: **v1.5.0**
   Aktivitäts-Labels darunter; Filter nach Typ bzw. T-Shirt/Pullover/Jacke
 
 ### Einstellungen (`/einstellungen`)
+- **Versionsnummer** oben neben der Überschrift und im Bereich „Datenspeicher & Sicherung“
 - **Standort** per Ortssuche oder manuellen Koordinaten
 - **Aktivitäten** anlegen, umbenennen, löschen
 - **Regeln für Oberteile**:
@@ -68,7 +70,13 @@ Hinweise zu Betrieb, Datenspeicherung, Wetterdaten-Lizenz und Haftung.
 | 5     | Warm – 19–25 °C    | Stark – 8–15 mm        |
 | 6     | Heiß – ab 25 °C    | Unwetter – ab 15 mm    |
 
-Jedes Kleidungsstück bekommt einen Stufenbereich „von – bis“.
+Jedes Kleidungsstück bekommt einen Stufenbereich „von – bis“ – außer:
+
+| Typ          | Temperatur | Niederschlag |
+|--------------|:----------:|:------------:|
+| Unterwäsche  | –          | –            |
+| Socken       | ✓          | –            |
+| alle anderen | ✓          | ✓            |
 
 ### Ablauf
 
@@ -83,6 +91,12 @@ Jedes Kleidungsstück bekommt einen Stufenbereich „von – bis“.
      **oder** der Niederschlag die eingestellte Stufe **erreicht**
 3. **Wetterpassung je Stück**: Zielstufe im Bereich → 100 %,
    1 Stufe daneben → 55 %, 2 Stufen → 20 %, weiter weg → 0 %.
+   **Ausnahmen für darunterliegende Schichten:**
+   - Wird ein **Pullover** vorgeschlagen (immer wegen der Temperatur), zählt die
+     **Temperatur des T-Shirts** nicht.
+   - Wird die **Jacke wegen Niederschlags** (und nicht wegen Kälte) vorgeschlagen,
+     zählt der **Niederschlag von T-Shirt und Pullover** nicht.
+   Im Outfit sind diese Balken ausgegraut und mit „zählt heute nicht“ beschriftet.
 4. **Farbharmonie** zwischen allen sichtbaren Teilen (Jacke, Pullover,
    T-Shirt, Hose, Schuhe):
    - Neutrale Farben (Schwarz, Grau, Weiß, Beige, Braun, Marine, Jeansblau …)
@@ -93,7 +107,7 @@ Jedes Kleidungsstück bekommt einen Stufenbereich „von – bis“.
 5. **T-Shirt + Hose** werden als Paar bewertet (40 % Temperatur,
    20 % Niederschlag, 40 % Farbe), Pullover und Jacke passen sich farblich an,
    **Schuhe** an das Gesamtbild (plus Bonus bei passender Aktivität),
-   **Unterwäsche** an die Temperatur.
+   **Unterwäsche** wird ohne Wetterbezug gewählt (Bonus bei passender Aktivität).
 6. Aus den Kandidaten wird **gewichtet zufällig** gezogen: gute Kombinationen sind
    deutlich wahrscheinlicher, aber es gibt Abwechslung.
 

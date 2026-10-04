@@ -213,7 +213,23 @@ function updatePreviews() {
 }
 
 /* ================= Untertyp (Oberteil) ================= */
+/* Unterwäsche: keine Wetterwerte, Socken: kein Niederschlag */
+function typeInfo(id) { return S.meta.types.find(t => t.id === id) || { temp: true, rain: true }; }
+
+function renderWeatherFields() {
+  const t = typeInfo($("#itemType").value);
+  $("#tempField").classList.toggle("hidden", t.temp === false);
+  $("#rainField").classList.toggle("hidden", t.rain === false);
+  const hint = $("#noWeatherHint");
+  const msg = t.temp === false && t.rain === false
+    ? `Für ${t.name} gibt es keine Temperatur- und Niederschlagsangabe.`
+    : t.rain === false ? `Für ${t.name} gibt es keine Niederschlagsangabe.` : "";
+  hint.textContent = msg;
+  hint.classList.toggle("hidden", !msg);
+}
+
 function renderSubtypes() {
+  renderWeatherFields();
   const subs = subsOf($("#itemType").value);
   $("#subtypeField").classList.toggle("hidden", !subs.length);
   if (subs.length && !subs.some(x => x.id === S.subtype)) S.subtype = subs[0].id;
@@ -296,8 +312,8 @@ function editItem(id) {
   $("#itemType").value = it.type;
   S.subtype = it.subtype || null;
   renderSubtypes();
-  $("#tempMin").value = it.temp_level_min; $("#tempMax").value = it.temp_level_max;
-  $("#rainMin").value = it.rain_level_min; $("#rainMax").value = it.rain_level_max;
+  if (it.temp_level_min != null) { $("#tempMin").value = it.temp_level_min; $("#tempMax").value = it.temp_level_max; }
+  if (it.rain_level_min != null) { $("#rainMin").value = it.rain_level_min; $("#rainMax").value = it.rain_level_max; }
   $("#photoPreview").src = "/bilder/" + encodeURIComponent(it.image);
   $("#photoPreview").classList.remove("hidden");
   $("#photoHint").classList.add("hidden");
@@ -324,7 +340,10 @@ $("#itemForm").addEventListener("submit", async e => {
   if (S.subtype) fd.append("subtype", S.subtype);
   fd.append("color", S.color);
   S.selActs.forEach(a => fd.append("activities", a));
-  for (const k of ["temp_level_min", "temp_level_max", "rain_level_min", "rain_level_max"]) fd.append(k, $(`[name=${k}]`).value);
+  const ti = typeInfo($("#itemType").value);
+  const keys = [...(ti.temp !== false ? ["temp_level_min", "temp_level_max"] : []),
+                ...(ti.rain !== false ? ["rain_level_min", "rain_level_max"] : [])];
+  for (const k of keys) fd.append(k, $(`[name=${k}]`).value);
   if (S.photoBlob) fd.append("image", S.photoBlob, "foto.jpg");
 
   const btn = $("#btnSave");
@@ -360,8 +379,7 @@ function renderItemList() {
       <div style="min-width:0">
         <div class="title">${esc(it.name)}</div>
         <div class="sub"><span class="swatch-dot" style="background:${colorBg(col)}"></span>${esc(itemTypeName(it))} ${acts}</div>
-        ${levelBar("temp", it.temp_level_min, it.temp_level_max, TL())}
-        ${levelBar("rain", it.rain_level_min, it.rain_level_max, RL())}
+        ${itemBars(it, S.meta)}
       </div>
       <div class="actions">
         <button class="btn btn-sm" data-edit="${it.id}">Bearbeiten</button>
@@ -404,6 +422,7 @@ async function loadStorage() {
   try {
     const s = await api("/api/storage");
     $("#storageInfo").innerHTML = `
+      <dt>Version</dt><dd>v${esc(S.meta.version)}</dd>
       <dt>Datenordner</dt><dd><code>${esc(s.home_dir)}</code></dd>
       <dt>Programm</dt><dd><code>${esc(s.program_dir)}</code></dd>
       <dt>Inhalt</dt><dd>${s.items} Kleidungsstücke · ${s.activities} Aktivitäten · ${fmtBytes(s.data_bytes)}</dd>

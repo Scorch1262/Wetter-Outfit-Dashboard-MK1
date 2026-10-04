@@ -280,6 +280,11 @@ def normalize_item(item):
     # bis v1.4.0: freie °C-/mm-Bereiche → jetzt 6 Stufen
     for kind, levels, dmin, dmax in (("temp", ofit.TEMP_LEVELS, 5, 25), ("rain", ofit.RAIN_LEVELS, 0, 5)):
         kmin, kmax = f"{kind}_level_min", f"{kind}_level_max"
+        if not ofit.has_attr(item["type"], kind):
+            # z. B. Unterwäsche (keine Werte) oder Socken (kein Niederschlag)
+            for k in (kmin, kmax, f"{kind}_min", f"{kind}_max"):
+                item.pop(k, None)
+            continue
         if kmin not in item or kmax not in item:
             try:
                 lo, hi = float(item.get(f"{kind}_min", dmin)), float(item.get(f"{kind}_max", dmax))
@@ -395,6 +400,8 @@ def parse_item_fields(form, existing=None):
 
     # Temperatur und Niederschlag in 6 Stufen
     for kind, d_a, d_b in (("temp", 2, 5), ("rain", 1, 3)):
+        if not ofit.has_attr(typ, kind):
+            continue  # Wert gibt es für diesen Typ nicht (normalize_item räumt auf)
         a = ofit.clamp_level(form.get(f"{kind}_level_min"), d_a)
         b = ofit.clamp_level(form.get(f"{kind}_level_max"), d_b)
         if a > b:

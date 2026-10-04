@@ -2,7 +2,10 @@
 {% block title %}Einstellungen{% endblock %}
 {% block content %}
 
-<h2 class="page-title">Einstellungen</h2>
+<div class="title-row">
+  <h2 class="page-title">Einstellungen</h2>
+  <span class="badge badge-version" title="Installierte Programmversion">Version {{ version }}</span>
+</div>
 
 <!-- Standort -------------------------------------------------------------->
 <section class="card">
@@ -107,7 +110,9 @@
       </div>
     </div>
 
-    <div class="field">
+    <p class="hint hidden" id="noWeatherHint"></p>
+
+    <div class="field" id="tempField">
       <span class="field-label">Geeignet für Temperatur</span>
       <div class="bar-preview" id="tempPreview"></div>
       <div class="grid-2 sliders">
@@ -116,7 +121,7 @@
       </div>
     </div>
 
-    <div class="field">
+    <div class="field" id="rainField">
       <span class="field-label">Geeignet für Niederschlag</span>
       <div class="bar-preview" id="rainPreview"></div>
       <div class="grid-2 sliders">

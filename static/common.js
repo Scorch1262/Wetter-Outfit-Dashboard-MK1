@@ -85,6 +85,7 @@ function levelTitle(kind, lv) {
 function levelBar(kind, a, b, levels, today = null, opts = {}) {
   const title = opts.title || (kind === "temp" ? "Temperatur" : "Niederschlag");
   const right = opts.rightText !== undefined ? opts.rightText : levelRangeText(levels, a, b);
+  if (opts.ignored) today = null;  // Tagesmarker ist bei ignorierten Werten irreführend
   const segs = levels.map(lv => {
     const on = lv.level >= a && lv.level <= b;
     const cls = ["seg", on ? "on" : "", lv.level === today ? "today" : ""].join(" ");
@@ -96,11 +97,30 @@ function levelBar(kind, a, b, levels, today = null, opts = {}) {
   const labels = opts.labels
     ? `<div class="seg-labels">${levels.map(lv => `<span>${esc(lv.name)}</span>`).join("")}</div>` : "";
   return `
-    <div class="bar lbar lbar-${kind}${opts.select ? " lbar-select" : ""}">
-      <div class="bar-label"><span>${esc(title)}</span><b>${esc(right)}</b></div>
+    <div class="bar lbar lbar-${kind}${opts.select ? " lbar-select" : ""}${opts.ignored ? " lbar-ignored" : ""}">
+      <div class="bar-label"><span>${esc(title)}${opts.ignored ? ` <em>· zählt heute nicht (${esc(opts.ignored)})</em>` : ""}</span><b>${esc(right)}</b></div>
       <div class="segs">${segs}</div>
       ${labels}
     </div>`;
+}
+
+/**
+ * Temperatur-/Niederschlagsbalken eines Kleidungsstücks – nur die Werte,
+ * die es für den Typ gibt (Unterwäsche: keine, Socken: nur Temperatur).
+ * ignored: {temp: "Grund", rain: "Grund"} für Werte, die heute nicht zählen.
+ */
+function itemBars(it, meta, todayT = null, todayR = null, ignored = {}) {
+  const type = (meta.types || []).find(t => t.id === it.type) || { temp: true, rain: true };
+  let html = "";
+  if (type.temp !== false && it.temp_level_min != null) {
+    html += levelBar("temp", it.temp_level_min, it.temp_level_max, meta.temp_levels, todayT,
+                     { ignored: ignored.temp });
+  }
+  if (type.rain !== false && it.rain_level_min != null) {
+    html += levelBar("rain", it.rain_level_min, it.rain_level_max, meta.rain_levels, todayR,
+                     { ignored: ignored.rain });
+  }
+  return html || `<p class="no-weather">Ohne Temperatur- und Niederschlagsangabe</p>`;
 }
 
 /* einfache Wetter-Icons als SVG */
