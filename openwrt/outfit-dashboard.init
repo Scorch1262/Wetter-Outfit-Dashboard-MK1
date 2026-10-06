@@ -1,5 +1,5 @@
 #!/bin/sh /etc/rc.common
-# procd-Startskript für das Outfit-Dashboard (GL.iNet Slate 7 / OpenWrt)
+# procd-Startskript für das Outfit-Dashboard (GL.iNet Slate 7, Brume 2 / OpenWrt)
 # Ziel: /etc/init.d/outfit-dashboard
 
 START=95

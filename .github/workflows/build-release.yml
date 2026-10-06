@@ -201,7 +201,7 @@ jobs:
           |-------|-----|
           | `…-windows.exe` | Windows 10/11 – in einen eigenen Ordner legen, Doppelklick startet Server und Browser |
           | `…-macos.zip` | macOS (Apple Silicon) – entpacken, App in einen eigenen Ordner legen |
-          | `…-router.zip` | GL.iNet Slate 7 / OpenWrt – Ordner `Outfit-Dashboard` nach `/root/` kopieren, `sh openwrt/install.sh` |
+          | `…-router.zip` | GL.iNet Slate 7, Brume 2 / OpenWrt – Ordner `Outfit-Dashboard` nach `/root/` kopieren, `sh openwrt/install.sh` (Brume 2 hinter dem Hauptrouter: `--wan`) |
 
           Alle Daten landen im Ordner `daten/` direkt neben der EXE bzw. der App.
           Beim Update nur die EXE bzw. App ersetzen – `daten/` bleibt erhalten.

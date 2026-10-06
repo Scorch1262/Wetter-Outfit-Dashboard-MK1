@@ -2,6 +2,41 @@
 
 Alle Änderungen am Outfit-Dashboard-MK1. Versionierung nach Semantic Versioning.
 
+## [1.8.1] – 2026-10-06
+
+### Neu
+- `openwrt/diagnose.sh`: Fehlersuche direkt auf dem Router (GL.iNet Slate 7 /
+  Brume 2) – prüft Python/Flask, Dienst, Port, lokale Antwort, Firewall-Regel,
+  LAN-/WAN-Adresse und Log und nennt die vermutliche Ursache
+- `install.sh` kontrolliert nach dem Start, ob das Dashboard wirklich antwortet
+  (bis zu 10 s), und zeigt andernfalls Log-Auszug, ggf. abweichenden Port und
+  den Hinweis auf `diagnose.sh`
+
+### Geändert
+- README: Abschnitt „Webseite nicht erreichbar – Fehlersuche“
+
+## [1.8.0] – 2026-10-06
+
+### Neu
+- **Unterstützung für GL.iNet Brume 2** (GL-MT2500 / GL-MT2500A, OpenWrt 21.02,
+  Python 3.9) – Programm unter Python 3.9 getestet, alle Abhängigkeiten liegen
+  als fertige Pakete für ARM64/musl vor
+- `install.sh`: **Freigabe des Dashboards auf der WAN-Seite** für Router, die
+  hinter dem Hauptrouter hängen (typisch beim Brume 2)
+  - Optionen `--wan`, `--kein-wan`, `--wan-erzwingen`, `--help`
+  - Rückfrage bei der Erstinstallation, wenn die WAN-Adresse privat ist
+  - Firewall-Regel `Outfit-Dashboard-WAN` (uci), bleibt bei Updates erhalten
+    und folgt einem geänderten Port
+  - Schutz: keine Freigabe bei öffentlicher WAN-Adresse (Dashboard ohne Passwort)
+- `install.sh` zeigt Gerätemodell sowie LAN- und WAN-Adresse an
+
+### Geändert
+- `install.sh` prüft die Python-Version (mindestens 3.8) und aktualisiert pip
+  vor der Installation von Flask (ältere pip-Versionen erkennen die
+  ARM64/musl-Pakete nicht)
+- pip wird über `python3 -m pip` aufgerufen
+- Doku und Release-Text nennen Slate 7 und Brume 2
+
 ## [1.7.0] – 2026-10-04
 
 ### Neu

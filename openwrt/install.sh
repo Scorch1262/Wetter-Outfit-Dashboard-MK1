@@ -1,5 +1,6 @@
 #!/bin/sh
-# Outfit-Dashboard – Installation UND Update auf dem GL.iNet Slate 7 (GL-BE3600)
+# Outfit-Dashboard – Installation UND Update auf GL.iNet-Routern (OpenWrt)
+# getestet für: Slate 7 (GL-BE3600), Brume 2 (GL-MT2500 / GL-MT2500A)
 #
 # Alles liegt in EINEM Ordner:
 #
@@ -16,26 +17,56 @@
 #     cd /root/Outfit-Dashboard && sh openwrt/install.sh
 # oder aus einem neuen Projektordner heraus (Update):
 #     cd /tmp/Outfit-Dashboard && sh openwrt/install.sh
+#
+# Optionen (Zugriff von der WAN-Seite, z. B. Brume 2 hinter dem Hauptrouter):
+#     --wan             Port auf der WAN-Seite freigeben (nur bei privater WAN-Adresse)
+#     --wan-erzwingen   freigeben, auch wenn die WAN-Adresse öffentlich ist (Vorsicht!)
+#     --kein-wan        Freigabe wieder entfernen
+#   ohne Option: bestehende Freigabe bleibt, bei Erstinstallation wird gefragt.
 set -e
 
-APP_DIR="/root/Outfit-Dashboard"
+# OUTFIT_TEST_ROOT nur für Tests außerhalb eines Routers (Pfade umlenken)
+ROOT="${OUTFIT_TEST_ROOT:-}"
+APP_DIR="$ROOT/root/Outfit-Dashboard"
 DATA_DIR="$APP_DIR/daten"
 SERVICE="outfit-dashboard"
+FW_RULE="Outfit-Dashboard-WAN"
 SRC_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PROGRAM_FILES="app.py outfit.py weather.py storage.py version.py requirements.txt
                config.example.json README.md CHANGELOG.md .gitignore templates static openwrt"
 
 say() { echo "==> $*"; }
+warn() { echo "!!  $*"; }
 same_dir() { [ "$(cd "$1" 2>/dev/null && pwd -P)" = "$(cd "$2" 2>/dev/null && pwd -P)" ]; }
+svc() {
+	if [ -n "$ROOT" ]; then echo "    (Test) Dienst $1"; else "/etc/init.d/$SERVICE" "$1"; fi
+}
+fw_reload() {
+	if [ -n "$ROOT" ]; then echo "    (Test) Firewall neu laden"; else /etc/init.d/firewall reload >/dev/null 2>&1 || true; fi
+}
+
+# --- Optionen -------------------------------------------------------------
+WAN_MODE=""
+for arg in "$@"; do
+	case "$arg" in
+		--wan) WAN_MODE="an" ;;
+		--wan-erzwingen) WAN_MODE="erzwingen" ;;
+		--kein-wan) WAN_MODE="aus" ;;
+		-h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+		*) echo "Unbekannte Option: $arg  (siehe --help)"; exit 1 ;;
+	esac
+done
 
 [ -f "$SRC_DIR/app.py" ] || { echo "app.py nicht gefunden – bitte aus dem Projektordner starten."; exit 1; }
 NEW_VERSION=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$SRC_DIR/version.py")
 OLD_VERSION=""
-for v in "$APP_DIR/version.py" /opt/outfit-dashboard/version.py; do
+for v in "$APP_DIR/version.py" "$ROOT/opt/outfit-dashboard/version.py"; do
 	if [ -z "$OLD_VERSION" ] && [ -f "$v" ] && ! same_dir "$(dirname "$v")" "$SRC_DIR"; then
 		OLD_VERSION=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$v")
 	fi
 done
+MODEL=$(ubus call system board 2>/dev/null | jsonfilter -e '@.model' 2>/dev/null || true)
+[ -n "$MODEL" ] && say "Gerät: $MODEL"
 if [ -n "$OLD_VERSION" ]; then say "Update v$OLD_VERSION -> v$NEW_VERSION"; else say "Installation v$NEW_VERSION"; fi
 
 # --- 1. Pakete (nur falls noch nicht vorhanden) ----------------------------
@@ -49,25 +80,33 @@ if ! command -v python3 >/dev/null 2>&1 || ! command -v pip3 >/dev/null 2>&1; th
 	fi
 	FREE_KB=$(df -k /overlay 2>/dev/null | awk 'NR==2 {print $4}')
 	if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt 40000 ]; then
-		echo "WARNUNG: nur $((FREE_KB / 1024)) MB frei auf /overlay – Python + Flask brauchen ca. 30 MB."
+		warn "nur $((FREE_KB / 1024)) MB frei auf /overlay – Python + Flask brauchen ca. 30 MB."
 	fi
 	say "Pakete installieren (python3, pip, CA-Zertifikate)"
 	$PKG_UPDATE
 	$PKG_ADD python3 python3-pip ca-bundle ca-certificates
 fi
+if ! python3 -c "import sys; sys.exit(sys.version_info < (3, 8))" 2>/dev/null; then
+	echo "Python $(python3 -V 2>&1) ist zu alt – benötigt wird mindestens Python 3.8."; exit 1
+fi
 if ! python3 -c "import flask, certifi" >/dev/null 2>&1; then
+	# ältere pip-Versionen (z. B. OpenWrt 21.02 auf dem Brume 2) kennen die
+	# fertigen Pakete für ARM64/musl noch nicht – daher zuerst pip aktualisieren
+	say "pip aktualisieren"
+	python3 -m pip install --no-cache-dir --upgrade pip >/dev/null 2>&1 || warn "pip-Update fehlgeschlagen – versuche es trotzdem"
 	say "Flask und certifi installieren"
-	pip3 install --no-cache-dir -r "$SRC_DIR/requirements.txt"
+	python3 -m pip install --no-cache-dir -r "$SRC_DIR/requirements.txt"
 fi
 
 # --- 2. Dienst anhalten ---------------------------------------------------
-if [ -x "/etc/init.d/$SERVICE" ]; then "/etc/init.d/$SERVICE" stop >/dev/null 2>&1 || true; fi
+if [ -x "$ROOT/etc/init.d/$SERVICE" ]; then svc stop >/dev/null 2>&1 || true; fi
 
 # --- 3. Datenordner anlegen und Altbestände übernehmen --------------------
 mkdir -p "$DATA_DIR"
 has_data() { [ -f "$1/clothes.json" ] || [ -f "$1/settings.json" ]; }
+MIGRATED_FROM=""
 if ! has_data "$DATA_DIR"; then
-	for OLD in /srv/outfit-dashboard/data /opt/outfit-dashboard/data; do
+	for OLD in "$ROOT/srv/outfit-dashboard/data" "$ROOT/opt/outfit-dashboard/data"; do
 		if has_data "$OLD"; then
 			say "Daten aus $OLD übernehmen"
 			cp -a "$OLD/." "$DATA_DIR/"
@@ -81,6 +120,8 @@ if ! has_data "$DATA_DIR"; then
 	done
 fi
 [ -f "$DATA_DIR/config.json" ] || cp "$SRC_DIR/config.example.json" "$DATA_DIR/config.json"
+PORT=$(sed -n 's/.*"port"[^0-9]*\([0-9]*\).*/\1/p' "$DATA_DIR/config.json" | head -n1)
+PORT="${PORT:-8095}"
 
 if has_data "$DATA_DIR"; then
 	mkdir -p "$DATA_DIR/backups"
@@ -108,37 +149,142 @@ fi
 find "$APP_DIR" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
 
 # --- 5. Dienst einrichten -------------------------------------------------
-cp "$APP_DIR/openwrt/outfit-dashboard.init" "/etc/init.d/$SERVICE"
-chmod +x "/etc/init.d/$SERVICE"
-"/etc/init.d/$SERVICE" enable
+mkdir -p "$ROOT/etc/init.d"
+cp "$APP_DIR/openwrt/outfit-dashboard.init" "$ROOT/etc/init.d/$SERVICE"
+chmod +x "$ROOT/etc/init.d/$SERVICE"
+svc enable
 
 # --- 6. bei Firmware-Updates ("Einstellungen behalten") mitsichern --------
-if [ -f /etc/sysupgrade.conf ]; then
+SYSUP="$ROOT/etc/sysupgrade.conf"
+if [ -f "$SYSUP" ]; then
 	# Einträge älterer Versionen entfernen
-	sed -i '\#^/srv/outfit-dashboard/$#d; \#^/opt/outfit-dashboard/$#d' /etc/sysupgrade.conf
+	sed -i '\#^/srv/outfit-dashboard/$#d; \#^/opt/outfit-dashboard/$#d' "$SYSUP"
 fi
-for p in "$APP_DIR/" "/etc/init.d/$SERVICE"; do
-	grep -qxF "$p" /etc/sysupgrade.conf 2>/dev/null || echo "$p" >> /etc/sysupgrade.conf
+for p in "/root/Outfit-Dashboard/" "/etc/init.d/$SERVICE"; do
+	grep -qxF "$p" "$SYSUP" 2>/dev/null || echo "$p" >> "$SYSUP"
 done
 
 # --- 7. alte Programmordner früherer Versionen entfernen ------------------
 # (Daten wurden oben bereits übernommen; /srv/outfit-dashboard bleibt als Reserve liegen)
-if [ -d /opt/outfit-dashboard ] && ! same_dir /opt/outfit-dashboard "$APP_DIR"; then
+if [ -d "$ROOT/opt/outfit-dashboard" ] && ! same_dir "$ROOT/opt/outfit-dashboard" "$APP_DIR"; then
 	say "Alten Programmordner /opt/outfit-dashboard entfernen"
-	rm -rf /opt/outfit-dashboard
+	rm -rf "$ROOT/opt/outfit-dashboard"
 fi
 
-"/etc/init.d/$SERVICE" start
+# --- 8. Zugriff von der WAN-Seite (z. B. Brume 2 hinter dem Hauptrouter) --
+# Der Brume 2 hängt meist mit seinem WAN-Port am Hauptrouter. Geräte im
+# Heimnetz (iPhone) liegen dann auf seiner WAN-Seite – dort blockiert die
+# Firewall eingehende Verbindungen. Eine Freigabe ist nur sicher, wenn die
+# WAN-Adresse privat ist (Heimnetz), nicht wenn sie direkt im Internet liegt.
+LAN_IP=$(uci -q get network.lan.ipaddr 2>/dev/null || echo "<router-ip>")
+WAN_IP=$(ifstatus wan 2>/dev/null | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null || true)
+is_private() {
+	case "$1" in
+		10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+fw_rule_ids() { uci -q show firewall 2>/dev/null | sed -n "s/^firewall\.\([^.]*\)\.name='$FW_RULE'$/\1/p"; }
+fw_remove() {
+	for id in $(fw_rule_ids); do uci -q delete "firewall.$id"; done
+	uci commit firewall
+}
+fw_add() {
+	fw_remove
+	sec=$(uci add firewall rule)
+	uci set "firewall.$sec.name=$FW_RULE"
+	uci set "firewall.$sec.src=wan"
+	uci set "firewall.$sec.proto=tcp"
+	uci set "firewall.$sec.dest_port=$PORT"
+	uci set "firewall.$sec.target=ACCEPT"
+	uci commit firewall
+	fw_reload
+}
 
-PORT=$(sed -n 's/.*"port"[^0-9]*\([0-9]*\).*/\1/p' "$DATA_DIR/config.json" | head -n1)
-IP=$(uci -q get network.lan.ipaddr || echo "<router-ip>")
+HAS_RULE=""
+[ -n "$(fw_rule_ids)" ] && HAS_RULE=1
+if [ -z "$WAN_MODE" ]; then
+	if [ -n "$HAS_RULE" ]; then
+		WAN_MODE="an"                       # bestehende Freigabe beibehalten (Port ggf. aktualisieren)
+	elif [ -t 0 ] && [ -n "$WAN_IP" ] && is_private "$WAN_IP"; then
+		echo ""
+		echo "Dieser Router hängt mit seinem WAN-Port im Netz $WAN_IP (z. B. hinter dem Hauptrouter)."
+		echo "Sollen Geräte aus diesem Netz (z. B. das iPhone im Heim-WLAN) das Dashboard erreichen?"
+		printf "Port %s auf der WAN-Seite freigeben? [j/N] " "$PORT"
+		read -r ans || ans=""
+		case "$ans" in j|J|ja|Ja|y|Y) WAN_MODE="an" ;; *) WAN_MODE="aus" ;; esac
+	fi
+fi
+
+WAN_OPEN=""
+case "$WAN_MODE" in
+	an|erzwingen)
+		if [ -z "$WAN_IP" ]; then
+			warn "WAN hat keine IPv4-Adresse – Freigabe trotzdem eingerichtet."
+			fw_add; WAN_OPEN=1
+		elif is_private "$WAN_IP" || [ "$WAN_MODE" = "erzwingen" ]; then
+			is_private "$WAN_IP" || warn "WAN-Adresse $WAN_IP ist ÖFFENTLICH – das Dashboard ist jetzt aus dem Internet erreichbar!"
+			say "Port $PORT auf der WAN-Seite freigeben (Firewall-Regel $FW_RULE)"
+			fw_add; WAN_OPEN=1
+		else
+			warn "WAN-Adresse $WAN_IP ist öffentlich – keine Freigabe eingerichtet,"
+			warn "sonst wäre das Dashboard (ohne Passwort) aus dem Internet erreichbar."
+			warn "Nur wenn du sicher bist: sh openwrt/install.sh --wan-erzwingen"
+			[ -n "$HAS_RULE" ] && fw_remove && fw_reload
+		fi
+		;;
+	aus)
+		if [ -n "$HAS_RULE" ]; then
+			say "Freigabe auf der WAN-Seite entfernen"
+			fw_remove; fw_reload
+		fi
+		;;
+esac
+
+svc start
+
+# --- 9. Kontrolle: antwortet das Dashboard wirklich? ----------------------
+http_get() {
+	if command -v wget >/dev/null 2>&1; then wget -q -T 3 -O - "$1" 2>/dev/null
+	elif command -v curl >/dev/null 2>&1; then curl -s -m 3 "$1" 2>/dev/null
+	else python3 -c "import sys,urllib.request;print(urllib.request.urlopen(sys.argv[1],timeout=3).read().decode())" "$1" 2>/dev/null
+	fi
+}
+RUN_OK=""
+if [ -z "$ROOT" ]; then
+	say "Kontrolle: Dashboard starten und Antwort prüfen"
+	i=0
+	while [ "$i" -lt 10 ]; do
+		case "$(http_get "http://127.0.0.1:$PORT/api/meta")" in
+			*Outfit-Dashboard*) RUN_OK=1; break ;;
+		esac
+		i=$((i + 1)); sleep 1
+	done
+	if [ -z "$RUN_OK" ]; then
+		warn "Das Dashboard antwortet NICHT auf Port $PORT – der Dienst läuft nicht richtig."
+		REAL=$(netstat -lntp 2>/dev/null | grep python | awk '{print $4}' | head -n1)
+		[ -n "$REAL" ] && warn "python3 hört auf $REAL (Port $PORT war vermutlich belegt)."
+		warn "Letzte Log-Zeilen:"
+		logread 2>/dev/null | grep -i -E "python|outfit" | tail -n 12 | sed 's/^/    /'
+		warn "Genaue Fehlersuche:  sh $APP_DIR/openwrt/diagnose.sh"
+	else
+		say "Dashboard läuft und antwortet auf Port $PORT"
+	fi
+fi
+
 echo ""
-echo "Fertig – Outfit-Dashboard v$NEW_VERSION"
-echo "  Webseite:  http://$IP:${PORT:-8095}"
-echo "  Ordner:    $APP_DIR"
-echo "  Daten:     $DATA_DIR  (bleibt bei Updates erhalten)"
-echo "  Log:       logread -e python3 -f"
-if [ -n "$MIGRATED_FROM" ] && [ -d /srv/outfit-dashboard ]; then
+echo "Fertig – Outfit-Dashboard v$NEW_VERSION${MODEL:+ auf $MODEL}"
+echo "  Webseite (LAN):  http://$LAN_IP:$PORT"
+if [ -n "$WAN_OPEN" ] && [ -n "$WAN_IP" ]; then
+	echo "  Webseite (WAN):  http://$WAN_IP:$PORT   ← aus dem Heimnetz vor dem Router"
+elif [ -n "$WAN_IP" ] && is_private "$WAN_IP"; then
+	echo "  Aus dem Netz $WAN_IP (WAN-Seite) nicht erreichbar – freigeben mit: sh openwrt/install.sh --wan"
+fi
+echo "  Ordner:          /root/Outfit-Dashboard"
+echo "  Daten:           /root/Outfit-Dashboard/daten  (bleibt bei Updates erhalten)"
+echo "  Log:             logread -e python3 -f"
+echo "  Fehlersuche:     sh /root/Outfit-Dashboard/openwrt/diagnose.sh"
+if [ -n "$MIGRATED_FROM" ] && [ -d "$ROOT/srv/outfit-dashboard" ]; then
 	echo ""
 	echo "Hinweis: Die alten Daten in /srv/outfit-dashboard werden nicht mehr benötigt."
 	echo "         Nach Kontrolle der Webseite löschen mit:  rm -rf /srv/outfit-dashboard"

@@ -3,11 +3,12 @@
 Lokales Web-Dashboard, das aus dem eigenen Kleiderschrank bei jedem Aufruf ein
 **farblich passendes Outfit zum heutigen Wetter** zusammenstellt.
 Gestaltet im dunklen Lattice-Design der übrigen Dashboards, optimiert für das
-iPhone und gedacht für den Dauerbetrieb auf einem **GL.iNet Slate 7** (OpenWrt).
+iPhone und gedacht für den Dauerbetrieb auf einem **GL.iNet-Router** (OpenWrt) –
+getestet für **Slate 7** (GL-BE3600) und **Brume 2** (GL-MT2500 / GL-MT2500A).
 Zusätzlich gibt es eine **Windows-EXE** und eine **macOS-App**, die per GitHub
 Actions automatisch gebaut und als Release veröffentlicht werden.
 
-Aktuelle Version: **v1.7.0**
+Aktuelle Version: **v1.8.1**
 
 > **Alles in einem Ordner:** `/root/Outfit-Dashboard` (auf dem Router
 > `root@GL-BE3600:~# Outfit-Dashboard`). Die Nutzerdaten liegen darin im
@@ -146,8 +147,9 @@ passenden Stufen umgerechnet.
 │   ├── outfit_dashboard.spec  PyInstaller-Spezifikation (Windows/macOS)
 │   └── make_icon.py        zeichnet das Programm-Icon beim Build
 ├── openwrt/
-│   ├── install.sh          Installation und Update (GL.iNet Slate 7)
+│   ├── install.sh          Installation und Update (GL.iNet Slate 7 / Brume 2)
 │   ├── update.sh           Update – ersetzt nur die Programmdateien
+│   ├── diagnose.sh         Fehlersuche auf dem Router
 │   └── outfit-dashboard.init  procd-Dienst (Autostart)
 ├── CHANGELOG.md
 ├── README.md
@@ -194,7 +196,7 @@ Aufruf: `http://<IP-des-Rechners>:8095`
 
 ---
 
-## Installation auf dem GL.iNet Slate 7
+## Installation auf einem GL.iNet-Router (Slate 7, Brume 2)
 
 Voraussetzungen: SSH-Zugang (`ssh root@192.168.8.1`), Internetverbindung des
 Routers, ca. **30–40 MB** freier Speicher auf `/overlay` für Python + Flask.
@@ -205,10 +207,11 @@ Den freien Speicher zeigt `df -h /overlay`.
 1. Ordner `Outfit-Dashboard` vom PC direkt ins Home-Verzeichnis des Routers kopieren:
    `scp -r Outfit-Dashboard root@192.168.8.1:/root/`
    (bei neueren OpenSSH-Versionen ggf. `scp -O -r …`)
-2. Auf dem Router (`root@GL-BE3600:~#`):
+2. Auf dem Router (`root@GL-BE3600:~#` bzw. `root@GL-MT2500:~#`):
    `cd Outfit-Dashboard`
    `sh openwrt/install.sh`
-3. Aufruf im Browser: `http://192.168.8.1:8095`
+3. Aufruf im Browser: `http://192.168.8.1:8095` (bzw. die Adresse, die das
+   Skript am Ende anzeigt)
 
 Das Skript
 
@@ -221,6 +224,52 @@ Das Skript
 - trägt `/root/Outfit-Dashboard/` und den Dienst in `/etc/sysupgrade.conf` ein,
   damit beides bei einem **Firmware-Update mit „Einstellungen behalten“**
   mitgesichert wird.
+
+### Besonderheiten Brume 2 (GL-MT2500)
+
+Der Brume 2 (MediaTek MT7981B, 1 GB RAM, 8 GB eMMC, Firmware auf Basis von
+OpenWrt 21.02 mit Python 3.9) hat genug Leistung und Speicher für das Dashboard.
+Der Unterschied liegt im Netzwerk:
+
+- Der Brume 2 hat **kein WLAN** und hängt meist mit seinem **WAN-Port am
+  Hauptrouter** (z. B. FRITZ!Box). Das iPhone im Heim-WLAN liegt dann auf der
+  **WAN-Seite** des Brume – dort blockiert die Firewall eingehende Verbindungen.
+- Damit das iPhone das Dashboard erreicht, gibt `install.sh` den Port auf der
+  WAN-Seite frei:
+  - bei der Erstinstallation fragt das Skript nach, oder direkt mit
+    `sh openwrt/install.sh --wan`
+  - die Freigabe ist eine Firewall-Regel namens `Outfit-Dashboard-WAN` und
+    bleibt bei Updates erhalten
+  - entfernen mit `sh openwrt/install.sh --kein-wan`
+- **Schutz:** Die Freigabe wird nur eingerichtet, wenn die WAN-Adresse des
+  Brume eine **private Heimnetz-Adresse** ist (10.x, 172.16–31.x, 192.168.x).
+  Hängt der Brume direkt am Internet, verweigert das Skript die Freigabe – das
+  Dashboard hat kein Passwort. (`--wan-erzwingen` nur, wenn man genau weiß, was
+  man tut.)
+- Am Ende zeigt das Skript beide Adressen an, z. B.
+  `http://192.168.8.1:8095` (LAN des Brume) und
+  `http://192.168.178.45:8095` (aus dem Heimnetz).
+- **Tipp:** Im Hauptrouter dem Brume eine feste IP-Adresse geben (DHCP-Reservierung),
+  damit sich die Adresse fürs iPhone nicht ändert.
+- Hängen die Geräte stattdessen am LAN-Port des Brume, ist keine Freigabe
+  nötig – dann gilt `http://192.168.8.1:8095`.
+
+### Webseite nicht erreichbar – Fehlersuche
+
+`install.sh` prüft am Ende selbst, ob das Dashboard auf dem Router antwortet,
+und zeigt andernfalls die letzten Log-Zeilen. Für eine genaue Analyse:
+
+`cd /root/Outfit-Dashboard && sh openwrt/diagnose.sh`
+
+Das Skript prüft Python/Flask, Dienst, Port, die lokale Antwort, Firewall-Regel,
+LAN-/WAN-Adresse und das Log und nennt am Ende die vermutliche Ursache. Häufigste Fälle:
+
+- **Dienst läuft, aber das Handy kommt nicht durch:** Das Gerät hängt im Netz
+  *vor* dem Router (WAN-Seite) → `sh openwrt/install.sh --wan` und die
+  WAN-Adresse aus der Ausgabe verwenden.
+- **Dienst läuft nicht:** Flask fehlt oder Fehler im Log → `logread -e python3`.
+- **Port belegt:** Das Programm weicht auf den nächsten freien Port aus;
+  `diagnose.sh` zeigt den tatsächlichen Port.
 
 ### Update auf eine neue Version
 
@@ -273,7 +322,7 @@ Unter **Releases** im GitHub-Repo liegen pro Version:
 |----------------------------------------|---------------------------------------|
 | `Outfit-Dashboard-vX.Y.Z-windows.exe`  | Windows 10/11                         |
 | `Outfit-Dashboard-vX.Y.Z-macos.zip`    | macOS 11+ (Apple Silicon)             |
-| `Outfit-Dashboard-vX.Y.Z-router.zip`   | GL.iNet Slate 7 – enthält den Ordner `Outfit-Dashboard` |
+| `Outfit-Dashboard-vX.Y.Z-router.zip`   | GL.iNet Slate 7 / Brume 2 – enthält den Ordner `Outfit-Dashboard` |
 
 ### Bedienung
 
