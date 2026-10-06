@@ -89,6 +89,16 @@ fi
 if ! python3 -c "import sys; sys.exit(sys.version_info < (3, 8))" 2>/dev/null; then
 	echo "Python $(python3 -V 2>&1) ist zu alt – benötigt wird mindestens Python 3.8."; exit 1
 fi
+# OpenWrt liefert Python teils nur als "light"-Variante ohne einzelne Module
+MISSING=$(python3 -c "
+import importlib
+for m in ('zipfile','ssl','socket','tempfile','threading','urllib.request','uuid','shutil','json','logging'):
+    try: importlib.import_module(m)
+    except Exception: print(m)
+" 2>/dev/null)
+if [ -n "$MISSING" ]; then
+	warn "Python-Module fehlen: $(echo $MISSING). Abhilfe:  opkg update && opkg install python3"
+fi
 if ! python3 -c "import flask, certifi" >/dev/null 2>&1; then
 	# ältere pip-Versionen (z. B. OpenWrt 21.02 auf dem Brume 2) kennen die
 	# fertigen Pakete für ARM64/musl noch nicht – daher zuerst pip aktualisieren

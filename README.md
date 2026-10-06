@@ -8,7 +8,7 @@ getestet für **Slate 7** (GL-BE3600) und **Brume 2** (GL-MT2500 / GL-MT2500A).
 Zusätzlich gibt es eine **Windows-EXE** und eine **macOS-App**, die per GitHub
 Actions automatisch gebaut und als Release veröffentlicht werden.
 
-Aktuelle Version: **v1.8.1**
+Aktuelle Version: **v1.8.2**
 
 > **Alles in einem Ordner:** `/root/Outfit-Dashboard` (auf dem Router
 > `root@GL-BE3600:~# Outfit-Dashboard`). Die Nutzerdaten liegen darin im

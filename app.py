@@ -23,7 +23,10 @@ import threading
 import time
 import urllib.request
 import uuid
-import webbrowser
+try:
+    import webbrowser
+except ImportError:      # z. B. OpenWrt (python3-light) ohne Modul webbrowser
+    webbrowser = None
 import zipfile
 
 from flask import Flask, abort, jsonify, render_template, request, send_file, send_from_directory
@@ -856,7 +859,8 @@ def main():
         if _already_running(port):
             log.info("Outfit-Dashboard läuft bereits auf Port %s – öffne nur den Browser.", port)
             if open_browser:
-                webbrowser.open(f"http://127.0.0.1:{port}/")
+                if webbrowser:
+                    webbrowser.open(f"http://127.0.0.1:{port}/")
             return
         for alt in range(port + 1, port + 11):
             if _port_free(host, alt):
@@ -874,7 +878,7 @@ def main():
     ip = _lan_ip()
     if ip and host in ("0.0.0.0", "::"):
         log.info("Netzwerk: http://%s:%s  (z. B. für das iPhone)", ip, port)
-    if open_browser:
+    if open_browser and webbrowser:
         threading.Timer(1.2, webbrowser.open, [f"http://127.0.0.1:{port}/"]).start()
     try:
         app.run(host=host, port=port, threaded=True, debug=False, use_reloader=False)
