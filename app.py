@@ -23,7 +23,6 @@ import threading
 import time
 import urllib.request
 import uuid
-import webbrowser
 import zipfile
 
 from flask import Flask, abort, jsonify, render_template, request, send_file, send_from_directory
@@ -845,6 +844,20 @@ def _lan_ip():
         return None
 
 
+def _open_browser(url):
+    """Browser öffnen (nur Desktop-Version).
+
+    Das Modul webbrowser wird erst hier geladen: Auf Routern mit
+    abgespecktem Python (z. B. OpenWrt "python3-light") fehlt es –
+    das Programm muss dort trotzdem starten.
+    """
+    try:
+        import webbrowser
+        webbrowser.open(url)
+    except Exception as exc:  # Modul fehlt oder kein Browser vorhanden
+        log.info("Browser nicht automatisch geöffnet (%s) – bitte %s aufrufen.", exc.__class__.__name__, url)
+
+
 def main():
     host = CONFIG["host"]
     port = int(os.environ.get("OUTFIT_PORT") or CONFIG["port"])
@@ -856,7 +869,7 @@ def main():
         if _already_running(port):
             log.info("Outfit-Dashboard läuft bereits auf Port %s – öffne nur den Browser.", port)
             if open_browser:
-                webbrowser.open(f"http://127.0.0.1:{port}/")
+                _open_browser(f"http://127.0.0.1:{port}/")
             return
         for alt in range(port + 1, port + 11):
             if _port_free(host, alt):
@@ -875,7 +888,7 @@ def main():
     if ip and host in ("0.0.0.0", "::"):
         log.info("Netzwerk: http://%s:%s  (z. B. für das iPhone)", ip, port)
     if open_browser:
-        threading.Timer(1.2, webbrowser.open, [f"http://127.0.0.1:{port}/"]).start()
+        threading.Timer(1.2, _open_browser, [f"http://127.0.0.1:{port}/"]).start()
     try:
         app.run(host=host, port=port, threaded=True, debug=False, use_reloader=False)
     except OSError as exc:

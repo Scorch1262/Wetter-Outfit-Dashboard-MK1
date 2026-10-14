@@ -2,6 +2,22 @@
 
 Alle Änderungen am Outfit-Dashboard-MK1. Versionierung nach Semantic Versioning.
 
+## [1.9.1] – 2026-10-14
+
+### Behoben
+- **Programm startete auf Routern mit abgespecktem Python nicht**
+  (`ModuleNotFoundError: No module named 'webbrowser'`, z. B. Brume 2 mit
+  `python3-light`): Das Modul `webbrowser` wird nur noch in der
+  Desktop-Version beim Öffnen des Browsers geladen und darf fehlen.
+- `install.sh` prüft jetzt alle Python-Module, die Dashboard und Webserver
+  benötigen, und installiert bei Lücken das vollständige Paket `python3`
+  nach; fehlen danach immer noch Module, bricht es mit Hinweis ab, statt
+  einen nicht startfähigen Dienst einzurichten.
+- `install.sh` erkennt pip auch über `python3 -m pip`
+
+### Doku
+- README: Abschnitt „Fehlersuche: Seite nicht erreichbar“
+
 ## [1.9.0] – 2026-10-14
 
 ### Neu

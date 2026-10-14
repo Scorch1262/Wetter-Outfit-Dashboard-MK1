@@ -8,7 +8,7 @@ getestet für **Slate 7** (GL-BE3600) und **Brume 2** (GL-MT2500 / GL-MT2500A).
 Zusätzlich gibt es eine **Windows-EXE** und eine **macOS-App**, die per GitHub
 Actions automatisch gebaut und als Release veröffentlicht werden.
 
-Aktuelle Version: **v1.9.0**
+Aktuelle Version: **v1.9.1**
 
 > **Alles in einem Ordner:** `/root/Outfit-Dashboard` (auf dem Router
 > `root@GL-BE3600:~# Outfit-Dashboard`). Die Nutzerdaten liegen darin im
@@ -278,6 +278,32 @@ Mit „Einstellungen behalten“ bleibt `/root/Outfit-Dashboard` samt `daten/`
 erhalten, die Python-Pakete aber nicht. Dann einfach erneut ausführen:
 `cd /root/Outfit-Dashboard && sh openwrt/install.sh`
 Zusätzlich empfiehlt sich vorher eine **Sicherung über die Einstellungsseite**.
+
+### Fehlersuche: Seite nicht erreichbar
+
+Auf dem Router nacheinander ausführen:
+
+| Befehl | Was es zeigt |
+|--------|--------------|
+| `/etc/init.d/outfit-dashboard status` | `running` heißt nur, dass procd es versucht – es kann trotzdem dauernd abstürzen |
+| `netstat -tln \| grep 8095` | eine Zeile = das Programm lauscht wirklich |
+| `logread -e python3 \| tail -n 30` | Fehlermeldungen des Programms |
+| `uci show firewall \| grep -i outfit` | ob die WAN-Freigabe eingerichtet ist |
+
+Häufige Ursachen:
+
+- **`ModuleNotFoundError: No module named …`** – auf dem Router ist nur ein
+  abgespecktes Python (z. B. `python3-light`) installiert. Abhilfe:
+  `opkg update && opkg install python3`, danach
+  `/etc/init.d/outfit-dashboard restart`. Ab v1.9.1 erkennt `install.sh` das
+  selbst und installiert das vollständige Paket nach.
+- **Programm lauscht (netstat zeigt 8095), aber das iPhone erreicht die Seite
+  nicht** – der Router hängt hinter dem Hauptrouter und die Firewall blockiert
+  die WAN-Seite: `cd /root/Outfit-Dashboard && sh openwrt/install.sh --wan`.
+- Programm zum Test im Vordergrund starten (Fehler direkt sichtbar):
+  `/etc/init.d/outfit-dashboard stop`, dann
+  `cd /root/Outfit-Dashboard && OUTFIT_HOME=/root/Outfit-Dashboard/daten python3 app.py`,
+  mit Strg+C beenden und `/etc/init.d/outfit-dashboard start`.
 
 ### Dienst bedienen
 

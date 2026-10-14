@@ -69,8 +69,39 @@ MODEL=$(ubus call system board 2>/dev/null | jsonfilter -e '@.model' 2>/dev/null
 [ -n "$MODEL" ] && say "Gerät: $MODEL"
 if [ -n "$OLD_VERSION" ]; then say "Update v$OLD_VERSION -> v$NEW_VERSION"; else say "Installation v$NEW_VERSION"; fi
 
-# --- 1. Pakete (nur falls noch nicht vorhanden) ----------------------------
-if ! command -v python3 >/dev/null 2>&1 || ! command -v pip3 >/dev/null 2>&1; then
+# --- 1. Pakete (nur falls nötig) -----------------------------------------
+# Python-Module, die das Dashboard und sein Webserver (Flask/Werkzeug) brauchen.
+# OpenWrt teilt Python in viele Einzelpakete auf. Ist nur "python3-light"
+# installiert (z. B. durch andere Programme), fehlen einige davon – dann wird
+# das vollständige Paket "python3" nachinstalliert.
+PY_MODULES="array ast atexit base64 bdb binascii bisect bz2 cmd
+            code codeop contextlib contextvars copy dataclasses datetime decimal difflib
+            dis email.utils encodings.idna fnmatch gettext glob hashlib heapq hmac
+            html http.client http.server importlib inspect ipaddress json linecache locale
+            logging lzma math mimetypes numbers pathlib pdb pickle pkgutil
+            platform pprint quopri random re secrets select selectors shlex
+            shutil signal socket socketserver ssl string stringprep struct tempfile
+            textwrap threading tokenize traceback typing unicodedata urllib.request uuid warnings
+            weakref zipfile zlib"
+# gibt fehlende Module aus; Rückgabewert 0 = alles vorhanden
+py_missing() {
+	python3 -c '
+import importlib, sys
+missing = []
+for name in sys.argv[1:]:
+    try:
+        importlib.import_module(name)
+    except Exception:
+        missing.append(name)
+print(" ".join(missing))
+sys.exit(1 if missing else 0)' $PY_MODULES 2>/dev/null
+}
+py_modules_ok() { command -v python3 >/dev/null 2>&1 && py_missing >/dev/null; }
+
+NEED_PKG=""
+py_modules_ok || NEED_PKG=1
+python3 -m pip --version >/dev/null 2>&1 || NEED_PKG=1
+if [ -n "$NEED_PKG" ]; then
 	if command -v opkg >/dev/null 2>&1; then
 		PKG_UPDATE="opkg update"; PKG_ADD="opkg install"
 	elif command -v apk >/dev/null 2>&1; then
@@ -78,16 +109,24 @@ if ! command -v python3 >/dev/null 2>&1 || ! command -v pip3 >/dev/null 2>&1; th
 	else
 		echo "Kein Paketmanager (opkg/apk) gefunden."; exit 1
 	fi
+	if command -v python3 >/dev/null 2>&1 && ! py_modules_ok; then
+		warn "Python ist unvollständig (es fehlt: $(py_missing || true))"
+	fi
 	FREE_KB=$(df -k /overlay 2>/dev/null | awk 'NR==2 {print $4}')
 	if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt 40000 ]; then
 		warn "nur $((FREE_KB / 1024)) MB frei auf /overlay – Python + Flask brauchen ca. 30 MB."
 	fi
-	say "Pakete installieren (python3, pip, CA-Zertifikate)"
+	say "Pakete installieren (python3 vollständig, pip, CA-Zertifikate)"
 	$PKG_UPDATE
 	$PKG_ADD python3 python3-pip ca-bundle ca-certificates
 fi
 if ! python3 -c "import sys; sys.exit(sys.version_info < (3, 8))" 2>/dev/null; then
 	echo "Python $(python3 -V 2>&1) ist zu alt – benötigt wird mindestens Python 3.8."; exit 1
+fi
+if ! py_modules_ok; then
+	echo "Es fehlen weiterhin Python-Module: $(py_missing || true)"
+	echo "Bitte von Hand nachinstallieren:  opkg update && opkg install python3"
+	exit 1
 fi
 if ! python3 -c "import flask, certifi" >/dev/null 2>&1; then
 	# ältere pip-Versionen (z. B. OpenWrt 21.02 auf dem Brume 2) kennen die
