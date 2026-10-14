@@ -8,7 +8,7 @@ getestet für **Slate 7** (GL-BE3600) und **Brume 2** (GL-MT2500 / GL-MT2500A).
 Zusätzlich gibt es eine **Windows-EXE** und eine **macOS-App**, die per GitHub
 Actions automatisch gebaut und als Release veröffentlicht werden.
 
-Aktuelle Version: **v1.8.2**
+Aktuelle Version: **v1.9.0**
 
 > **Alles in einem Ordner:** `/root/Outfit-Dashboard` (auf dem Router
 > `root@GL-BE3600:~# Outfit-Dashboard`). Die Nutzerdaten liegen darin im
@@ -25,7 +25,7 @@ Aktuelle Version: **v1.8.2**
   Tiefstwert, erwartete Niederschlagsmenge (mm) und -wahrscheinlichkeit
 - **Reiter „Outfit“**
   - Zusammenstellung aus **Oberteil** (T-Shirt, bei Bedarf Pullover und Jacke),
-    **Hose, Unterwäsche** und einer **Schuh-Empfehlung**, Bilder untereinander
+    **Hose, Unterwäsche, Socken** und einer **Schuh-Empfehlung**, Bilder untereinander
   - Zeile darüber erklärt, warum heute Pullover/Jacke vorgeschlagen werden
   - wird bei **jedem Neuladen** neu gewürfelt (zusätzlich Knopf „Neu“)
   - **Aktivitäten-Leiste** an der Seite: Oberteile und Hosen werden nur aus Stücken
@@ -113,7 +113,8 @@ Jedes Kleidungsstück bekommt einen Stufenbereich „von – bis“ – außer:
 5. **T-Shirt + Hose** werden als Paar bewertet (40 % Temperatur,
    20 % Niederschlag, 40 % Farbe), Pullover und Jacke passen sich farblich an,
    **Schuhe** an das Gesamtbild (plus Bonus bei passender Aktivität),
-   **Unterwäsche** wird ohne Wetterbezug gewählt (Bonus bei passender Aktivität).
+   **Unterwäsche** wird ohne Wetterbezug gewählt (Bonus bei passender Aktivität),
+   **Socken** nach Temperatur und Farbe zu Hose und Schuhen (Bonus bei passender Aktivität).
 6. Aus den Kandidaten wird **gewichtet zufällig** gezogen: gute Kombinationen sind
    deutlich wahrscheinlicher, aber es gibt Abwechslung.
 
@@ -149,7 +150,6 @@ passenden Stufen umgerechnet.
 ├── openwrt/
 │   ├── install.sh          Installation und Update (GL.iNet Slate 7 / Brume 2)
 │   ├── update.sh           Update – ersetzt nur die Programmdateien
-│   ├── diagnose.sh         Fehlersuche auf dem Router
 │   └── outfit-dashboard.init  procd-Dienst (Autostart)
 ├── CHANGELOG.md
 ├── README.md
@@ -253,23 +253,6 @@ Der Unterschied liegt im Netzwerk:
   damit sich die Adresse fürs iPhone nicht ändert.
 - Hängen die Geräte stattdessen am LAN-Port des Brume, ist keine Freigabe
   nötig – dann gilt `http://192.168.8.1:8095`.
-
-### Webseite nicht erreichbar – Fehlersuche
-
-`install.sh` prüft am Ende selbst, ob das Dashboard auf dem Router antwortet,
-und zeigt andernfalls die letzten Log-Zeilen. Für eine genaue Analyse:
-
-`cd /root/Outfit-Dashboard && sh openwrt/diagnose.sh`
-
-Das Skript prüft Python/Flask, Dienst, Port, die lokale Antwort, Firewall-Regel,
-LAN-/WAN-Adresse und das Log und nennt am Ende die vermutliche Ursache. Häufigste Fälle:
-
-- **Dienst läuft, aber das Handy kommt nicht durch:** Das Gerät hängt im Netz
-  *vor* dem Router (WAN-Seite) → `sh openwrt/install.sh --wan` und die
-  WAN-Adresse aus der Ausgabe verwenden.
-- **Dienst läuft nicht:** Flask fehlt oder Fehler im Log → `logread -e python3`.
-- **Port belegt:** Das Programm weicht auf den nächsten freien Port aus;
-  `diagnose.sh` zeigt den tatsächlichen Port.
 
 ### Update auf eine neue Version
 

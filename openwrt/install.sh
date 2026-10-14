@@ -89,16 +89,6 @@ fi
 if ! python3 -c "import sys; sys.exit(sys.version_info < (3, 8))" 2>/dev/null; then
 	echo "Python $(python3 -V 2>&1) ist zu alt – benötigt wird mindestens Python 3.8."; exit 1
 fi
-# OpenWrt liefert Python teils nur als "light"-Variante ohne einzelne Module
-MISSING=$(python3 -c "
-import importlib
-for m in ('zipfile','ssl','socket','tempfile','threading','urllib.request','uuid','shutil','json','logging'):
-    try: importlib.import_module(m)
-    except Exception: print(m)
-" 2>/dev/null)
-if [ -n "$MISSING" ]; then
-	warn "Python-Module fehlen: $(echo $MISSING). Abhilfe:  opkg update && opkg install python3"
-fi
 if ! python3 -c "import flask, certifi" >/dev/null 2>&1; then
 	# ältere pip-Versionen (z. B. OpenWrt 21.02 auf dem Brume 2) kennen die
 	# fertigen Pakete für ARM64/musl noch nicht – daher zuerst pip aktualisieren
@@ -253,35 +243,6 @@ esac
 
 svc start
 
-# --- 9. Kontrolle: antwortet das Dashboard wirklich? ----------------------
-http_get() {
-	if command -v wget >/dev/null 2>&1; then wget -q -T 3 -O - "$1" 2>/dev/null
-	elif command -v curl >/dev/null 2>&1; then curl -s -m 3 "$1" 2>/dev/null
-	else python3 -c "import sys,urllib.request;print(urllib.request.urlopen(sys.argv[1],timeout=3).read().decode())" "$1" 2>/dev/null
-	fi
-}
-RUN_OK=""
-if [ -z "$ROOT" ]; then
-	say "Kontrolle: Dashboard starten und Antwort prüfen"
-	i=0
-	while [ "$i" -lt 10 ]; do
-		case "$(http_get "http://127.0.0.1:$PORT/api/meta")" in
-			*Outfit-Dashboard*) RUN_OK=1; break ;;
-		esac
-		i=$((i + 1)); sleep 1
-	done
-	if [ -z "$RUN_OK" ]; then
-		warn "Das Dashboard antwortet NICHT auf Port $PORT – der Dienst läuft nicht richtig."
-		REAL=$(netstat -lntp 2>/dev/null | grep python | awk '{print $4}' | head -n1)
-		[ -n "$REAL" ] && warn "python3 hört auf $REAL (Port $PORT war vermutlich belegt)."
-		warn "Letzte Log-Zeilen:"
-		logread 2>/dev/null | grep -i -E "python|outfit" | tail -n 12 | sed 's/^/    /'
-		warn "Genaue Fehlersuche:  sh $APP_DIR/openwrt/diagnose.sh"
-	else
-		say "Dashboard läuft und antwortet auf Port $PORT"
-	fi
-fi
-
 echo ""
 echo "Fertig – Outfit-Dashboard v$NEW_VERSION${MODEL:+ auf $MODEL}"
 echo "  Webseite (LAN):  http://$LAN_IP:$PORT"
@@ -293,7 +254,6 @@ fi
 echo "  Ordner:          /root/Outfit-Dashboard"
 echo "  Daten:           /root/Outfit-Dashboard/daten  (bleibt bei Updates erhalten)"
 echo "  Log:             logread -e python3 -f"
-echo "  Fehlersuche:     sh /root/Outfit-Dashboard/openwrt/diagnose.sh"
 if [ -n "$MIGRATED_FROM" ] && [ -d "$ROOT/srv/outfit-dashboard" ]; then
 	echo ""
 	echo "Hinweis: Die alten Daten in /srv/outfit-dashboard werden nicht mehr benötigt."

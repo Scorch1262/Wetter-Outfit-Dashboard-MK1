@@ -290,6 +290,7 @@ def build_outfit(items, activity=None, target=None, rng=None, rules=None):
     pants_all = _by_type(items, "hose")
     tshirts, pullis, jackets, pants = act(tshirts_all), act(pullis_all), act(jackets_all), act(pants_all)
     under = _by_type(items, "unterwaesche")
+    socks_all = _by_type(items, "socken")
     shoes = _by_type(items, "schuhe")
 
     # Basis-Oberteil: T-Shirt; gibt es keins, ersatzweise ein Pullover (falls erlaubt)
@@ -349,6 +350,16 @@ def build_outfit(items, activity=None, target=None, rng=None, rules=None):
             sc.append((score, s))
         shoe = _weighted_choice(rng, sc)
 
+    # --- Socken: Temperatur + Farbe zu Hose und Schuhen (+ Bonus Aktivität) ---
+    # (Socken haben keine Niederschlagsangabe)
+    sock = None
+    if socks_all:
+        kc = []
+        for k in socks_all:
+            bonus = 0.15 if activity not in (None, "", "alle") and activity in (k.get("activities") or []) else 0.0
+            kc.append((0.5 * temp_fit(k, target) + 0.3 * _color_vs(k, [pant, shoe]) + bonus, k))
+        sock = _weighted_choice(rng, kc)
+
     # --- Unterwäsche: Temperatur + Bonus Aktivität -------------------------
     undie = None
     if under:
@@ -384,6 +395,7 @@ def build_outfit(items, activity=None, target=None, rng=None, rules=None):
     pieces += [
         _piece("hose", "Hose", pant, target, missing("Hose", pants_all, pants)),
         _piece("unterwaesche", "Unterwäsche", undie, target, missing("Unterwäsche", under, under)),
+        _piece("socken", "Socken", sock, target, missing("Socken", socks_all, socks_all)),
         _piece("schuhe", "Schuhe (Empfehlung)", shoe, target, missing("Schuhe", shoes, shoes)),
     ]
     weather_vals = [p["fit"]["temp"] * 0.67 + p["fit"]["rain"] * 0.33 for p in pieces if p.get("item")]

@@ -2,27 +2,15 @@
 
 Alle Änderungen am Outfit-Dashboard-MK1. Versionierung nach Semantic Versioning.
 
-## [1.8.2] – 2026-10-06
-
-### Behoben
-- **Dienst startete auf dem Brume 2 nicht** (`ModuleNotFoundError: No module named
-  'webbrowser'`): das Modul fehlt im Python des Routers. `webbrowser` ist jetzt
-  optional – ohne das Modul wird einfach kein Browser geöffnet
-- `install.sh` prüft die benötigten Python-Module und weist bei fehlenden
-  Modulen auf `opkg install python3` hin
-
-## [1.8.1] – 2026-10-06
+## [1.9.0] – 2026-10-14
 
 ### Neu
-- `openwrt/diagnose.sh`: Fehlersuche direkt auf dem Router (GL.iNet Slate 7 /
-  Brume 2) – prüft Python/Flask, Dienst, Port, lokale Antwort, Firewall-Regel,
-  LAN-/WAN-Adresse und Log und nennt die vermutliche Ursache
-- `install.sh` kontrolliert nach dem Start, ob das Dashboard wirklich antwortet
-  (bis zu 10 s), und zeigt andernfalls Log-Auszug, ggf. abweichenden Port und
-  den Hinweis auf `diagnose.sh`
-
-### Geändert
-- README: Abschnitt „Webseite nicht erreichbar – Fehlersuche“
+- **Socken im Outfit:** Die Zusammenstellung enthält jetzt einen Platz
+  „Socken“ zwischen Unterwäsche und Schuhen
+  - Auswahl nach Temperatur (Socken haben keine Niederschlagsangabe),
+    Farbe passend zu Hose und Schuhen, Bonus bei passender Aktivität
+  - ohne angelegte Socken erscheint der Hinweis
+    „Noch kein Kleidungsstück „Socken“ angelegt.“
 
 ## [1.8.0] – 2026-10-06
 
